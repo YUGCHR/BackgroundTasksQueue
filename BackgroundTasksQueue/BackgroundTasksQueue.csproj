@@ -6,10 +6,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="CachingFramework.Redis" Version="12.0.3" />
+    <PackageReference Include="Microsoft.AspNetCore.Http.Features" Version="5.0.3" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="5.0.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Services\" />
+    <PackageReference Include="StackExchange.Redis" Version="2.2.4" />
   </ItemGroup>
 </Project>
