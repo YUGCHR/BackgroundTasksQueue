@@ -9,6 +9,7 @@ using CachingFramework.Redis.Contracts.Providers;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using BackgroundTasksQueue.Services;
+using BackgroundTasksQueue.Models;
 
 namespace BackgroundTasksQueue
 {
@@ -17,16 +18,19 @@ namespace BackgroundTasksQueue
         private readonly ILogger<MonitorLoop> _logger;
         private readonly ISettingConstants _constant;
         private readonly CancellationToken _cancellationToken;
+        private readonly ICacheProviderAsync _cache;
         private readonly IOnKeysEventsSubscribeService _subscribe;
 
         public MonitorLoop(
             ILogger<MonitorLoop> logger,
             ISettingConstants constant,
+            ICacheProviderAsync cache,
             IHostApplicationLifetime applicationLifetime,
             IOnKeysEventsSubscribeService subscribe)
         {
             _logger = logger;
             _constant = constant;
+            _cache = cache;
             _subscribe = subscribe;
             _cancellationToken = applicationLifetime.ApplicationStopping;
         }
@@ -45,6 +49,41 @@ namespace BackgroundTasksQueue
             // контроллеров же в лесу (на фронте) много и желудей, то есть задач, у них тоже много
             // а несколько (много) серверов могут неспешно выполнять задачи из очереди в бэкграунде
 
+            EventKeyNames eventKeysSet = new EventKeyNames
+            {
+                EventKeyFrom = _constant.GetEventKeyFrom, // "subscribeOnFrom" - ключ для подписки на команду запуска эмулятора сервера
+                EventFieldFrom = _constant.GetEventFieldFrom, // "count" - поле для подписки на команду запуска эмулятора сервера
+                EventCmd = KeyEvent.HashSet,
+                EventKeyBackReadiness = _constant.GetEventKeyBackReadiness, // ключ регистрации серверов
+                EventFieldBack = _constant.GetEventFieldBack,
+                EventKeyFrontGivesTask = _constant.GetEventKeyFrontGivesTask, // кафе выдачи задач
+                EventFieldFront = _constant.GetEventFieldFront,
+                EventKeyBacksTasksProceed = _constant.GetEventKeyBacksTasksProceed, //  ключ выполняемых/выполненных задач                
+                Ttl = TimeSpan.FromDays(_constant.GetKeyFromTimeDays) // срок хранения ключа eventKeyFrom
+            };
+
+
+            // множественные контроллеры по каждому запросу (пользователей) создают очередь - каждый создаёт ключ, на который у back-servers подписка, в нём поле со своим номером, а в значении или имя ключа с заданием или само задание            
+            // дальше бэк-сервера сами разбирают задания
+            // бэк после старта кладёт в ключ ___ поле со своим сгенерированным guid для учета?
+            // все бэк-сервера подписаны на базовый ключ и получив сообщение по подписке, стараются взять задание - у кого получилось удалить ключ, тот и взял
+
+
+
+            string backServerGuid = Guid.NewGuid().ToString();
+            // в значение можно положить время создания сервера
+            await _cache.SetHashedAsync<string>(eventKeysSet.EventKeyBackReadiness, backServerGuid, backServerGuid, eventKeysSet.Ttl);
+            // при завершении сервера удалить своё поле из ключа регистрации серверов
+
+            // подписываемся на ключ сообщения о появлении свободных задач
+            _subscribe.SubscribeOnEventRun(eventKeysSet, backServerGuid);
+
+
+
+            // слишком сложная цепочка guid
+            // оставить в общем ключе задач только поле, известное контроллеру и в значении сразу положить сумму задачу в модели
+            // первым полем в модели создать номер guid задачи - прямо в модели?
+
             // ----------------- вы находитесь здесь
 
 
@@ -55,20 +94,12 @@ namespace BackgroundTasksQueue
 
 
 
-            // To start tasks batch enter from Redis console the command - hset subscribeOnFrom tasks:count 30 (where 30 is tasks count - from 10 to 50)            
-            KeyEvent eventCmdSet = KeyEvent.HashSet;
-            string eventKeyFrom = _constant.GetEventKeyFrom; // "subscribeOnFrom" - key to find guid-field with tasks package
-            string eventFieldFrom = _constant.GetEventFieldFrom; // "count" - field
-
-            TimeSpan ttl = TimeSpan.FromDays(_constant.GetKeyFromTimeDays); // срок хранения ключа eventKeyFrom (unused here)
 
             string eventKeyRun = _constant.GetEventKeyRun; // "task:run" - ключ и поле для подписки на ключи задач, создаваемые сервером (или эмулятором)
             string eventFieldRun = _constant.GetEventFieldRun; // "ttt" - temporary base field to fetch the actual field
 
             // сервер кладёт название поля ключа в заранее обусловленную ячейку ("task:run/Guid") и тут её можно прочитать
             string eventGuidFieldRun = await _subscribe.FetchGuidFieldTaskRun(eventKeyRun, eventFieldRun);
-
-            _subscribe.SubscribeOnEventRun(eventKeyRun, eventCmdSet, eventGuidFieldRun, 1); // 1 - номер сервера, потом можно заменить на guid
 
 
 
@@ -126,10 +157,13 @@ namespace BackgroundTasksQueue
                     _logger.LogInformation("ConsoleKey was received {KeyStroke}.", keyStroke.Key);
                 }
             }
+
+            _logger.LogInformation("MonitorLoop was canceled by Token.");
         }
 
         private bool IsCancellationNotYet()
         {
+            _logger.LogInformation("Cancellation Token is obtained.");
             return !_cancellationToken.IsCancellationRequested; // add special key from Redis?
         }
 
