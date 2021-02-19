@@ -13,6 +13,10 @@ namespace BackgroundTasksQueue.Services
         public string GetEventFieldFrom { get; }
         public string GetEventKeyBackReadiness { get; }
         public string GetEventKeyFrontGivesTask { get; }
+        public string GetPrefixRequest { get; }
+        public string GetPrefixPackage { get; }
+        public string GetPrefixTask { get; }
+        public string GetPrefixBackServer { get; }
         public string GetEventFieldBack { get; }
         public string GetEventFieldFront { get; }
         public string GetEventKeyBacksTasksProceed { get; }
@@ -28,6 +32,10 @@ namespace BackgroundTasksQueue.Services
         private readonly string _getEventFieldFrom;
         private readonly string _getEventKeyBackReadiness;
         private readonly string _getEventKeyFrontGivesTask;
+        private readonly string _getPrefixRequest;
+        private readonly string _getPrefixPackage;
+        private readonly string _getPrefixTask;
+        private readonly string _getPrefixBackServer;
         private readonly string _getEventFieldBack;
         private readonly string _getEventFieldFront;
         private readonly string _getEventKeyBacksTasksProceed;
@@ -47,10 +55,17 @@ namespace BackgroundTasksQueue.Services
             _getEventFieldFrom = Configuration.GetSection("SettingConstants").GetSection("RedisKeys").GetSection("eventFieldFrom").Value;
             _getEventKeyBackReadiness = Configuration.GetSection("SettingConstants").GetSection("RedisKeys").GetSection("eventKeyBackReadiness").Value;
             _getEventKeyFrontGivesTask = Configuration.GetSection("SettingConstants").GetSection("RedisKeys").GetSection("eventKeyFrontGivesTask").Value;
+
+            _getPrefixRequest = Configuration.GetSection("SettingConstants").GetSection("RedisKeys").GetSection("prefixRequest").Value;
+            _getPrefixPackage = Configuration.GetSection("SettingConstants").GetSection("RedisKeys").GetSection("prefixPackage").Value;
+            _getPrefixTask = Configuration.GetSection("SettingConstants").GetSection("RedisKeys").GetSection("prefixTask").Value;
+            _getPrefixBackServer = Configuration.GetSection("SettingConstants").GetSection("RedisKeys").GetSection("prefixBackServer").Value;
+
             _getEventFieldBack = Configuration.GetSection("SettingConstants").GetSection("RedisKeys").GetSection("eventFieldBack").Value;
             _getEventFieldFront = Configuration.GetSection("SettingConstants").GetSection("RedisKeys").GetSection("eventFieldFront").Value;
             _getEventKeyBacksTasksProceed = Configuration.GetSection("SettingConstants").GetSection("RedisKeys").GetSection("eventKeyBacksTasksProceed").Value;
         }
+
         private IConfiguration Configuration { get; }
 
         public int GetRecordActualityLevel => _getRecordActualityLevel;
@@ -61,8 +76,13 @@ namespace BackgroundTasksQueue.Services
         public string GetEventFieldFrom => _getEventFieldFrom;
         public string GetEventKeyBackReadiness => _getEventKeyBackReadiness;
         public string GetEventKeyFrontGivesTask => _getEventKeyFrontGivesTask;
+        public string GetPrefixRequest => _getPrefixRequest;
+        public string GetPrefixPackage => _getPrefixPackage;
+        public string GetPrefixTask => _getPrefixTask;
+        public string GetPrefixBackServer => _getPrefixBackServer;
         public string GetEventFieldBack => _getEventFieldBack;
         public string GetEventFieldFront => _getEventFieldFront;
         public string GetEventKeyBacksTasksProceed => _getEventKeyBacksTasksProceed;
 
     }
+}

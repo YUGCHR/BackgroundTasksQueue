@@ -49,19 +49,7 @@ namespace BackgroundTasksQueue
             // контроллеров же в лесу (на фронте) много и желудей, то есть задач, у них тоже много
             // а несколько (много) серверов могут неспешно выполнять задачи из очереди в бэкграунде
 
-            EventKeyNames eventKeysSet = new EventKeyNames
-            {
-                EventKeyFrom = _constant.GetEventKeyFrom, // "subscribeOnFrom" - ключ для подписки на команду запуска эмулятора сервера
-                EventFieldFrom = _constant.GetEventFieldFrom, // "count" - поле для подписки на команду запуска эмулятора сервера
-                EventCmd = KeyEvent.HashSet,
-                EventKeyBackReadiness = _constant.GetEventKeyBackReadiness, // ключ регистрации серверов
-                EventFieldBack = _constant.GetEventFieldBack,
-                EventKeyFrontGivesTask = _constant.GetEventKeyFrontGivesTask, // кафе выдачи задач
-                EventFieldFront = _constant.GetEventFieldFront,
-                EventKeyBacksTasksProceed = _constant.GetEventKeyBacksTasksProceed, //  ключ выполняемых/выполненных задач                
-                Ttl = TimeSpan.FromDays(_constant.GetKeyFromTimeDays) // срок хранения ключа eventKeyFrom
-            };
-
+            EventKeyNames eventKeysSet = InitialiseEventKeyNames();
 
             // множественные контроллеры по каждому запросу (пользователей) создают очередь - каждый создаёт ключ, на который у back-servers подписка, в нём поле со своим номером, а в значении или имя ключа с заданием или само задание            
             // дальше бэк-сервера сами разбирают задания
@@ -69,8 +57,7 @@ namespace BackgroundTasksQueue
             // все бэк-сервера подписаны на базовый ключ и получив сообщение по подписке, стараются взять задание - у кого получилось удалить ключ, тот и взял
 
 
-
-            string backServerGuid = Guid.NewGuid().ToString();
+            string backServerGuid = $"{eventKeysSet.PrefixBackServer}:{Guid.NewGuid()}";
             // в значение можно положить время создания сервера
             await _cache.SetHashedAsync<string>(eventKeysSet.EventKeyBackReadiness, backServerGuid, backServerGuid, eventKeysSet.Ttl);
             // при завершении сервера удалить своё поле из ключа регистрации серверов
@@ -83,6 +70,12 @@ namespace BackgroundTasksQueue
             // слишком сложная цепочка guid
             // оставить в общем ключе задач только поле, известное контроллеру и в значении сразу положить сумму задачу в модели
             // первым полем в модели создать номер guid задачи - прямо в модели?
+            // оставляем слишком много guid, но добавляем к ним префиксы, чтобы в логах было понятно, что за guid
+            // key EventKeyFrontGivesTask, fields - request:guid (model property - PrefixRequest), values - package:guid (PrefixPackage)
+            // key package:guid, fileds - task:guid (PrefixTask), values - models
+            // key EventKeyBackReadiness, fields - back(server):guid (PrefixBackServer)
+            // key EventKeyBacksTasksProceed, fields - request:guid (PrefixRequest), values - package:guid (PrefixPackage)
+            // method to fetch package (returns dictionary) from request:guid
 
             // ----------------- вы находитесь здесь
 
@@ -117,8 +110,8 @@ namespace BackgroundTasksQueue
 
             // создаём имя ключа, содержащего пакет задач 
             string taskPackageGuid = Guid.NewGuid().ToString();
-            
-            
+
+
             // в методе FrontServerSetTasks записываем ключ пакета задач в ключ eventKeyFrontGivesTask, а в сам ключ - сами задачи
             // можно положить новые переменные тоже в eventKeysSet
             int inPackageTaskCount = await FrontServerSetTasks(taskPackage, eventKeysSet, taskPackageGuid, capturedBackServerGuid);
@@ -165,6 +158,26 @@ namespace BackgroundTasksQueue
         {
             _logger.LogInformation("Cancellation Token is obtained.");
             return !_cancellationToken.IsCancellationRequested; // add special key from Redis?
+        }
+
+        private EventKeyNames InitialiseEventKeyNames()
+        {
+            return new EventKeyNames
+            {
+                EventKeyFrom = _constant.GetEventKeyFrom, // "subscribeOnFrom" - ключ для подписки на команду запуска эмулятора сервера
+                EventFieldFrom = _constant.GetEventFieldFrom, // "count" - поле для подписки на команду запуска эмулятора сервера
+                EventCmd = KeyEvent.HashSet,
+                EventKeyBackReadiness = _constant.GetEventKeyBackReadiness, // ключ регистрации серверов
+                EventFieldBack = _constant.GetEventFieldBack,
+                EventKeyFrontGivesTask = _constant.GetEventKeyFrontGivesTask, // кафе выдачи задач
+                PrefixRequest = _constant.GetPrefixRequest, // request:guid
+                PrefixPackage = _constant.GetPrefixPackage, // package:guid
+                PrefixTask = _constant.GetPrefixTask, // task:guid
+                PrefixBackServer = _constant.GetPrefixBackServer, // backserver:guid
+                EventFieldFront = _constant.GetEventFieldFront,
+                EventKeyBacksTasksProceed = _constant.GetEventKeyBacksTasksProceed, //  ключ выполняемых/выполненных задач                
+                Ttl = TimeSpan.FromDays(_constant.GetKeyFromTimeDays) // срок хранения ключа eventKeyFrom
+            };
         }
 
         private async Task<string> CaptureBackServerGuid(string eventKeyBackReadiness)

@@ -67,44 +67,51 @@ namespace BackgroundTasksQueue.Services
             string eventKeyFrontGivesTask = eventKeysSet.EventKeyFrontGivesTask;
             //_logger.LogInformation("Task FetchKeysOnEventRun with key {0} and field {1} started.", eventKeyRun, eventGuidFieldRun);
 
+            // здесь начать цикл по получению задачи, если не получилось, то обновлять словарь ключей?
+            // в дальнейшем можно обновлять словарь в зависимости от соотношения ключей/ серверов
+            // если ключей заметно больше, чем серверов, то первая-вторая неудача могут быть случайными и перечитать словарь надо только после третьей неудачи
+            //а лучше вообще сразу стереться такому неудачливому серверу
+
             // после сообщения подписки об обновлении ключа, достаём список свободных задач
             IDictionary<string, string> tasksList = await _cache.GetHashedAllAsync<string>(eventKeyFrontGivesTask);
             int tasksListCount = tasksList.Count;
-            // чтобы не возиться с преобразованием в массив/лист, можно кидать кубик на каждый гуид - пробуем захватить или пропускаем
-            // нет, под капотом словаря тот же считанный список и индексы можно достать
-            //Random random = new Random(DateTime.Now.Millisecond);
-            //string name = names.ElementAt(random.Next(0, names.Length));
-            // generate random integers from 0 to guids count
-            Random rand = new Random();
-            int diceRoll =  rand.Next(0, tasksListCount - 1);
-            var (guidField, guidValue) = tasksList.ElementAt(diceRoll);
 
-            // проверяем захват задачи - пробуем удалить выбранное поле ключа
-            bool isDeleteSuccess = await _cache.RemoveHashedAsync(eventKeyFrontGivesTask, guidField);
-            // здесь может разорваться цепочка между ключом, который известен контроллеру и ключом пакета задач
-            _logger.LogInformation("Background server No: {0} reported - isDeleteSuceess = {1}.", backServerGuid, isDeleteSuccess);
-            
-
-            if (isDeleteSuccess)
+            for (int i = 0; i < tasksListCount; i++)
             {
-                _logger.LogInformation("Background server No: {0} fetched taskPackageKey {1} successfully.", backServerGuid, guidField); // победитель по жизни
+                // generate random integers from 0 to guids count
+                Random rand = new Random();
+                int diceRoll = rand.Next(0, tasksListCount - 1);
+                var (guidField, guidValue) = tasksList.ElementAt(diceRoll);
 
-                // регистрируем полученную задачу на ключе выполняемых/выполненных задач
-                // поле - исходный ключ пакета (известный контроллеру, по нему он найдёт сервер, выполняющий его задание)
-                await _cache.SetHashedAsync(eventKeysSet.EventKeyBacksTasksProceed, guidField, backServerGuid);
-                // регистрируем исходный ключ и ключ пакета задач на ключе сервера - чтобы не разорвать цепочку
-                await _cache.SetHashedAsync(backServerGuid, guidField, guidValue);
+                // проверяем захват задачи - пробуем удалить выбранное поле ключа
+                bool isDeleteSuccess = await _cache.RemoveHashedAsync(eventKeyFrontGivesTask, guidField);
+                // здесь может разорваться цепочка между ключом, который известен контроллеру и ключом пакета задач
+                _logger.LogInformation("Background server No: {0} reported - isDeleteSuceess = {1}.", backServerGuid, isDeleteSuccess);
 
-                IDictionary<string, int> taskPackage = await _cache.GetHashedAllAsync<int>(guidValue); // получили пакет заданий - id задачи и данные (int) для неё
-
-                foreach (var t in taskPackage) // try to Select?
+                if (isDeleteSuccess)
                 {
-                    var (taskGuid, cycleCount) = t;
-                    _task2Queue.StartWorkItem(backServerGuid, taskGuid, cycleCount);
-                    await _cache.SetHashedAsync(backServerGuid, taskGuid, cycleCount); // создаём ключ для контроля выполнения задания из пакета
-                    _logger.LogInformation("Background server No: {0} sent Task with ID {1} and {2} cycles to Queue.", processNum, taskGuid, cycleCount);
+                    _logger.LogInformation("Background server No: {0} fetched taskPackageKey {1} successfully.", backServerGuid, guidField); // победитель по жизни
+
+                    // регистрируем полученную задачу на ключе выполняемых/выполненных задач
+                    // поле - исходный ключ пакета (известный контроллеру, по нему он найдёт сервер, выполняющий его задание)
+                    await _cache.SetHashedAsync(eventKeysSet.EventKeyBacksTasksProceed, guidField, backServerGuid);
+                    // регистрируем исходный ключ и ключ пакета задач на ключе сервера - чтобы не разорвать цепочку
+                    await _cache.SetHashedAsync(backServerGuid, guidField, guidValue);
+
+                    // далее в отдельный метод
+
+                    IDictionary<string, int> taskPackage = await _cache.GetHashedAllAsync<int>(guidValue); // получили пакет заданий - id задачи и данные (int) для неё
+
+                    foreach (var t in taskPackage) // try to Select?
+                    {
+                        var (taskGuid, cycleCount) = t;
+                        // складываем задачи во внутреннюю очередь сервера
+                        _task2Queue.StartWorkItem(backServerGuid, taskGuid, cycleCount);
+                        await _cache.SetHashedAsync(backServerGuid, taskGuid, cycleCount); // создаём ключ для контроля выполнения задания из пакета
+                        _logger.LogInformation("Background server No: {0} sent Task with ID {1} and {2} cycles to Queue.", processNum, taskGuid, cycleCount);
+                    }
+                    return;
                 }
-                return;
             }
 
             // перебираем все guid задач, выбираем случайную (по номеру) и пробуем её получить
@@ -112,17 +119,17 @@ namespace BackgroundTasksQueue.Services
             {
                 //var (guidFiled, guidValue) = t;
 
-                
 
 
-                
+
+
 
             }
             // когда номер сервера будет guid, очистку можно убрать, но поставить срок жизни ключа час или день, при нормальном завершении пакета ключ удаляется штатно
             //bool isKeyCleanedSuccess = await _cache.RemoveAsync(processNum.ToString());
             //_logger.LogInformation("Background server No: {0} reported - Server Key Cleaned Success = {1}.", processNum, isKeyCleanedSuccess);
 
-            
+
             _logger.LogInformation("Background server No: {0} cannot catch the task.", processNum);
             return;
         }
