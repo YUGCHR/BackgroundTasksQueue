@@ -65,6 +65,8 @@ namespace BackgroundTasksQueue.Services
         private async Task FetchKeysOnEventRun(EventKeyNames eventKeysSet, string backServerGuid)
         {
             string eventKeyFrontGivesTask = eventKeysSet.EventKeyFrontGivesTask;
+            string eventKeyBacksTasksProceed = eventKeysSet.EventKeyBacksTasksProceed;
+
             //_logger.LogInformation("Task FetchKeysOnEventRun with key {0} and field {1} started.", eventKeyRun, eventGuidFieldRun);
 
             // здесь начать цикл по получению задачи, если не получилось, то обновлять словарь ключей?
@@ -72,19 +74,33 @@ namespace BackgroundTasksQueue.Services
             // если ключей заметно больше, чем серверов, то первая-вторая неудача могут быть случайными и перечитать словарь надо только после третьей неудачи
             //а лучше вообще сразу стереться такому неудачливому серверу
 
-            // после сообщения подписки об обновлении ключа, достаём список свободных задач
-            IDictionary<string, string> tasksList = await _cache.GetHashedAllAsync<string>(eventKeyFrontGivesTask);
-            int tasksListCount = tasksList.Count;
+            // пытаемся захватить задачу, пока не получится, если никак, то там и останемся? 
+            // а если захватить получится, то выйдем из цикла возвратом
+            bool isDeleteSuccess = false;
+            bool isExistEventKeyFrontGivesTask = true;
 
-            for (int i = 0; i < tasksListCount; i++)
+            // этот цикл будет чем-то большим - в нём будем крутиться вообще, пока есть задачи в ключе
+            // когда задача получена надо отдать управление в метод, который будет проверять ход выполнения и await его, пока все задания в пакете не будут выполнены
+            // и тогда идти опять проверять ключ кафе и пробовать взять следующую задачу - подписку на тот ключ уже никто не обновит, пока новый пакет не приедет
+            // и ещё надо заблокировать подписку на этот ключ, пока выполняются задачи
+
+            while (DoWhileCheck(isDeleteSuccess, isExistEventKeyFrontGivesTask))
             {
+                // проверить существование ключа, может, все задачи давно разобрали и ключ исчез
+                isExistEventKeyFrontGivesTask = await _cache.KeyExistsAsync(eventKeyFrontGivesTask);
+
+
+                // после сообщения подписки об обновлении ключа, достаём список свободных задач
+                IDictionary<string, string> tasksList = await _cache.GetHashedAllAsync<string>(eventKeyFrontGivesTask);
+                int tasksListCount = tasksList.Count;
+
                 // generate random integers from 0 to guids count
                 Random rand = new Random();
                 int diceRoll = rand.Next(0, tasksListCount - 1);
                 var (guidField, guidValue) = tasksList.ElementAt(diceRoll);
 
                 // проверяем захват задачи - пробуем удалить выбранное поле ключа
-                bool isDeleteSuccess = await _cache.RemoveHashedAsync(eventKeyFrontGivesTask, guidField);
+                isDeleteSuccess = await _cache.RemoveHashedAsync(eventKeyFrontGivesTask, guidField);
                 // здесь может разорваться цепочка между ключом, который известен контроллеру и ключом пакета задач
                 _logger.LogInformation("Background server No: {0} reported - isDeleteSuceess = {1}.", backServerGuid, isDeleteSuccess);
 
@@ -94,44 +110,49 @@ namespace BackgroundTasksQueue.Services
 
                     // регистрируем полученную задачу на ключе выполняемых/выполненных задач
                     // поле - исходный ключ пакета (известный контроллеру, по нему он найдёт сервер, выполняющий его задание)
-                    await _cache.SetHashedAsync(eventKeysSet.EventKeyBacksTasksProceed, guidField, backServerGuid);
+                    // пока что поле задачи в кафе и ключ самой задачи совпадают, поэтому контроллер может напрямую читать состояние пакета задач по известному ему ключу
+                    await _cache.SetHashedAsync(eventKeyBacksTasksProceed, guidField, backServerGuid);
+                    _logger.LogInformation("Tasks package was registered on key {0} - \n      with source package key {1} and original package key {2}.", eventKeyBacksTasksProceed, guidField, guidValue);
+
                     // регистрируем исходный ключ и ключ пакета задач на ключе сервера - чтобы не разорвать цепочку
                     await _cache.SetHashedAsync(backServerGuid, guidField, guidValue);
+                    _logger.LogInformation("Background server No: {0} registered tasks package - \n      with source package key {1} and original package key {2}.", backServerGuid, guidField, guidValue);
 
                     // далее в отдельный метод
+                    await TasksFromKeysToQueue(guidValue, backServerGuid);
 
-                    IDictionary<string, int> taskPackage = await _cache.GetHashedAllAsync<int>(guidValue); // получили пакет заданий - id задачи и данные (int) для неё
-
-                    foreach (var t in taskPackage) // try to Select?
-                    {
-                        var (taskGuid, cycleCount) = t;
-                        // складываем задачи во внутреннюю очередь сервера
-                        _task2Queue.StartWorkItem(backServerGuid, taskGuid, cycleCount);
-                        await _cache.SetHashedAsync(backServerGuid, taskGuid, cycleCount); // создаём ключ для контроля выполнения задания из пакета
-                        _logger.LogInformation("Background server No: {0} sent Task with ID {1} and {2} cycles to Queue.", processNum, taskGuid, cycleCount);
-                    }
                     return;
                 }
             }
 
-            // перебираем все guid задач, выбираем случайную (по номеру) и пробуем её получить
-            foreach (var t in tasksList) // try to Select?
-            {
-                //var (guidFiled, guidValue) = t;
-
-
-
-
-
-
-            }
-            // когда номер сервера будет guid, очистку можно убрать, но поставить срок жизни ключа час или день, при нормальном завершении пакета ключ удаляется штатно
-            //bool isKeyCleanedSuccess = await _cache.RemoveAsync(processNum.ToString());
-            //_logger.LogInformation("Background server No: {0} reported - Server Key Cleaned Success = {1}.", processNum, isKeyCleanedSuccess);
-
-
-            _logger.LogInformation("Background server No: {0} cannot catch the task.", processNum);
+            // пока что сюда никак попасть не может, но надо предусмотреть, что все задачи исчерпались, а никого не поймали
+            // скажем, ключ вообще исчез и ловить больше нечего
+            // теперь сюда попадём, если ключ eventKeyFrontGivesTask исчез и задачу не захватить
+            // надо сделать возврат в исходное состояние ожидания вброса ключа
+            // побочный эффект - можно смело брать последнюю задачу и не опасаться, что ключ eventKeyFrontGivesTask исчезнет
+            _logger.LogInformation("Background server No: {0} cannot catch the task.", backServerGuid);
             return;
+        }
+
+        private bool DoWhileCheck(bool isDeleteSuccess, bool isExistEventKeyFrontGivesTask)
+        {
+            return isDeleteSuccess || isExistEventKeyFrontGivesTask;
+        }
+
+        private async Task TasksFromKeysToQueue(string guidValue, string backServerGuid)
+        {
+            IDictionary<string, int> taskPackage = await _cache.GetHashedAllAsync<int>(guidValue); // получили пакет заданий - id задачи и данные (int) для неё
+
+            foreach (var t in taskPackage)
+            {
+                var (taskGuid, cycleCount) = t;
+                // складываем задачи во внутреннюю очередь сервера
+                _task2Queue.StartWorkItem(backServerGuid, taskGuid, cycleCount);
+                await _cache.SetHashedAsync(backServerGuid, taskGuid, cycleCount); // создаём ключ для контроля выполнения задания из пакета
+                _logger.LogInformation("Background server No: {0} sent Task with ID {1} and {2} cycles to Queue.", backServerGuid, taskGuid, cycleCount);
+            }
+            string eventKeyCommand = $"Key {eventKey}, HashSet command";
+            _logger.LogInformation("You subscribed on event - {EventKey}.", eventKeyCommand);
         }
 
         public void SubscribeOnEventAdd(string eventKey, KeyEvent eventCmd)
