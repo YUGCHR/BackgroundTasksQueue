@@ -20,9 +20,7 @@ namespace BackgroundTasksQueue
             monitorLoop.StartMonitorLoop();
 
             host.Run();
-
-
-        }
+        }        
 
         public static IHostBuilder CreateHostBuilder(string[] args) =>
             Host.CreateDefaultBuilder(args)
@@ -42,14 +40,43 @@ namespace BackgroundTasksQueue
                         throw;
                     }
 
+                    services.AddSingleton<ThisBackServerGuid>();
                     services.AddSingleton<ISettingConstants, SettingConstants>();
                     services.AddHostedService<QueuedHostedService>();
                     services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
                     services.AddSingleton<MonitorLoop>();
                     services.AddSingleton<IBackgroundTasksService, BackgroundTasksService>();
                     services.AddSingleton<IOnKeysEventsSubscribeService, OnKeysEventsSubscribeService>();
-                    //services.AddSingleton<IFrontServerEmulationService, FrontServerEmulationService>();
-
                 });
     }
+
+    public class ThisBackServerGuid
+    {
+        private readonly string thisBackServerGuid;
+
+        public ThisBackServerGuid()
+        {
+            thisBackServerGuid = Guid.NewGuid().ToString();
+        }        
+
+        public string GetThisBackServerGuid()
+        {
+            return thisBackServerGuid;
+        }
+    }
+    
+    //public static class ThisBackServerGuid
+    //{
+    //    static ThisBackServerGuid()
+    //    {
+    //        thisBackServerGuid = Guid.NewGuid().ToString();
+    //    }
+
+    //    private static readonly string thisBackServerGuid;
+
+    //    public static string GetThisBackServerGuid()
+    //    {
+    //        return thisBackServerGuid;
+    //    }
+    //}
 }

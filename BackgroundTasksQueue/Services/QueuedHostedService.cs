@@ -15,19 +15,28 @@ namespace BackgroundTasksQueue.Services
     public class QueuedHostedService : BackgroundService
     {
         private readonly ILogger<QueuedHostedService> _logger;
+        private readonly ISettingConstants _constant;
         private readonly ICacheProviderAsync _cache;
         private readonly IKeyEventsProvider _keyEvents;
+        private readonly string _guid;
 
         List<BackgroundProcessingTask> tasks = new List<BackgroundProcessingTask>();
 
-
-        public QueuedHostedService(IBackgroundTaskQueue taskQueue,
-            ILogger<QueuedHostedService> logger, ICacheProviderAsync cache, IKeyEventsProvider keyEvents)
+        public QueuedHostedService(
+            ThisBackServerGuid thisGuid,
+            IBackgroundTaskQueue taskQueue,
+            ILogger<QueuedHostedService> logger,
+            ISettingConstants constant,
+            ICacheProviderAsync cache, 
+            IKeyEventsProvider keyEvents)
         {
             TaskQueue = taskQueue;
             _logger = logger;
+            _constant = constant;
             _cache = cache;
             _keyEvents = keyEvents;
+
+            _guid = thisGuid.GetThisBackServerGuid();
         }
 
         public IBackgroundTaskQueue TaskQueue { get; }
@@ -49,6 +58,9 @@ namespace BackgroundTasksQueue.Services
 
             string eventKey = "task:add";
             string cancelKey = "task:del";
+
+            string backServerGuid = $"{_constant.GetPrefixBackServer}:{_guid}"; // Guid.NewGuid()
+            _logger.LogInformation("INIT - No: {0} - guid of This Server was fetched in QueuedHostedService.", backServerGuid);
 
             _keyEvents.Subscribe(eventKey, (string key, KeyEvent cmd) =>
             {
