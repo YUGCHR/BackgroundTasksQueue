@@ -23,7 +23,7 @@ namespace BackgroundTasksQueue.Services
         List<BackgroundProcessingTask> tasks = new List<BackgroundProcessingTask>();
 
         public QueuedHostedService(
-            ThisBackServerGuid thisGuid,
+            GenerateThisBackServerGuid thisGuid,
             IBackgroundTaskQueue taskQueue,
             ILogger<QueuedHostedService> logger,
             ISettingConstants constant,
@@ -36,7 +36,7 @@ namespace BackgroundTasksQueue.Services
             _cache = cache;
             _keyEvents = keyEvents;
 
-            _guid = thisGuid.GetThisBackServerGuid();
+            _guid = thisGuid.ThisBackServerGuid();
         }
 
         public IBackgroundTaskQueue TaskQueue { get; }
@@ -60,13 +60,14 @@ namespace BackgroundTasksQueue.Services
             string cancelKey = "task:del";
 
             string backServerGuid = $"{_constant.GetPrefixBackServer}:{_guid}"; // Guid.NewGuid()
-            _logger.LogInformation("INIT - No: {0} - guid of This Server was fetched in QueuedHostedService.", backServerGuid);
+            _logger.LogInformation(1101, "INIT No: {0} - guid of This Server was fetched in QueuedHostedService.", backServerGuid);
 
+            // подписка на ключ добавления бэкграунд процессов (поле без разницы), в значении можно было бы ставить количество необходимых процессов
             _keyEvents.Subscribe(eventKey, (string key, KeyEvent cmd) =>
             {
                 if (cmd == KeyEvent.HashSet)
                 {
-                    _logger.LogInformation("Received key {0} with command {1}", eventKey, cmd);
+                    _logger.LogInformation(1111, "Received key {0} with command {1}", eventKey, cmd);
 
                     string guid = Guid.NewGuid().ToString();
                     CancellationTokenSource newCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
@@ -76,18 +77,19 @@ namespace BackgroundTasksQueue.Services
                     {
                         TaskId = tasksCount + 1,
                         ProcessingTaskId = guid,
+                        // запускаем новый процесс
                         ProcessingTask = Task.Run(() => ProcessingTaskMethod(newToken), newToken),
                         CancellationTaskToken = newCts
                     });
                     tasksCount++;
 
                     //tasks.Add(Task.Run(() => ProcessingTaskMethod(newToken), newToken));
-                    _logger.LogInformation("New Task for Background Processes was added, total count became {Count}", tasksCount);
+                    _logger.LogInformation(1211, "New Task for Background Processes was added, total count became {Count}", tasksCount);
                 }
             });
 
             string eventKeyCommand = $"Key {eventKey}, HashSet command";
-            _logger.LogInformation("You subscribed on event - {EventKey}.", eventKeyCommand);
+            _logger.LogInformation(1311, "You subscribed on event - {EventKey}.", eventKeyCommand);
 
             _keyEvents.Subscribe(cancelKey, (string key, KeyEvent cmd) =>
             {
@@ -96,6 +98,7 @@ namespace BackgroundTasksQueue.Services
                     _logger.LogInformation("key {0} - command {1}", key, cmd);
                     if (tasksCount > 0)
                     {
+                        // останавливаем процесс
                         var cts = tasks[tasksCount - 1].CancellationTaskToken;
                         cts.Cancel();
 

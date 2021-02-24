@@ -23,7 +23,7 @@ namespace BackgroundTasksQueue
         private readonly string _guid;
 
         public MonitorLoop(
-            ThisBackServerGuid thisGuid,
+            GenerateThisBackServerGuid thisGuid,
             ILogger<MonitorLoop> logger,
             ISettingConstants constant,
             ICacheProviderAsync cache,
@@ -36,12 +36,12 @@ namespace BackgroundTasksQueue
             _subscribe = subscribe;
             _cancellationToken = applicationLifetime.ApplicationStopping;
 
-            _guid = thisGuid.GetThisBackServerGuid();
+            _guid = thisGuid.ThisBackServerGuid();
         }
 
         public void StartMonitorLoop()
         {
-            _logger.LogInformation("Monitor Loop is starting.");
+            _logger.LogInformation(100, "BackServer's MonitorLoop is starting.");
 
             // Run a console user input loop in a background thread
             Task.Run(Monitor, _cancellationToken);
@@ -53,6 +53,7 @@ namespace BackgroundTasksQueue
             // контроллеров же в лесу (на фронте) много и желудей, то есть задач, у них тоже много
             // а несколько (много) серверов могут неспешно выполнять задачи из очереди в бэкграунде
 
+            // собрать все константы в один класс
             EventKeyNames eventKeysSet = InitialiseEventKeyNames();
 
             // множественные контроллеры по каждому запросу (пользователей) создают очередь - каждый создаёт ключ, на который у back-servers подписка, в нём поле со своим номером, а в значении или имя ключа с заданием или само задание            
@@ -63,11 +64,15 @@ namespace BackgroundTasksQueue
             //string test = ThisBackServerGuid.GetThisBackServerGuid(); // guid from static class
             // получаем уникальный номер этого сервера, сгенерированный при старте экземпляра сервера
             string backServerGuid = $"{eventKeysSet.PrefixBackServer}:{_guid}"; // Guid.NewGuid()
-            _logger.LogInformation("INIT - No: {0} - guid of This Server was fetched in MonitorLoop.", backServerGuid);
+            //EventId aaa = new EventId(222, "INIT");
+            _logger.LogInformation(101, "INIT No: {0} - guid of This Server was fetched in MonitorLoop.", backServerGuid);
 
             // в значение можно положить время создания сервера
+            // проверить, что там за время на ключах, подумать, нужно ли разное время для разных ключей - скажем, кафе и регистрация серверов - день, пакет задач - час
+            // регистрируем поле guid сервера на ключе регистрации серверов
             await _cache.SetHashedAsync<string>(eventKeysSet.EventKeyBackReadiness, backServerGuid, backServerGuid, eventKeysSet.Ttl);
-            // при завершении сервера удалить своё поле из ключа регистрации серверов
+            // восстановить время жизни ключа регистрации сервера перед новой охотой - где и как?
+            // при завершении сервера успеть удалить своё поле из ключа регистрации серверов - обработать cancellationToken
 
             // подписываемся на ключ сообщения о появлении свободных задач
             _subscribe.SubscribeOnEventRun(eventKeysSet, backServerGuid);
@@ -110,7 +115,7 @@ namespace BackgroundTasksQueue
 
         private bool IsCancellationNotYet()
         {
-            _logger.LogInformation("Cancellation Token is obtained.");
+            _logger.LogInformation("Is Cancellation Token obtained? - {1}", _cancellationToken.IsCancellationRequested);
             return !_cancellationToken.IsCancellationRequested; // add special key from Redis?
         }
 
@@ -132,6 +137,6 @@ namespace BackgroundTasksQueue
                 EventKeyBacksTasksProceed = _constant.GetEventKeyBacksTasksProceed, //  ключ выполняемых/выполненных задач                
                 Ttl = TimeSpan.FromDays(_constant.GetKeyFromTimeDays) // срок хранения ключа eventKeyFrom
             };
-        }        
+        }
     }
 }

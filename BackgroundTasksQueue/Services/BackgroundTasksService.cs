@@ -43,7 +43,7 @@ namespace BackgroundTasksQueue.Services
                 int loopRemain = loopCount;
                 //var guid = Guid.NewGuid().ToString();
 
-                _logger.LogInformation("Queued Background Task {Guid} is starting on Server No. {ServerNum}.", guid, serverNum);
+                _logger.LogInformation(2101, "Queued Background Task {Guid} is starting.", guid);
 
                 while (!token.IsCancellationRequested && delayLoop < loopCount)
                 {
@@ -59,22 +59,22 @@ namespace BackgroundTasksQueue.Services
                     await _cache.SetHashedAsync(serverNum, guid, loopRemain); // обновляем отчёт о прогрессе выполнения задания
                     delayLoop++;
 
-                    _logger.LogInformation("Queued Background Task {Guid} is running on Server No. {ServerNum}. current Loop = {DelayLoop} / Loop remaining = {3}", guid, serverNum, delayLoop, loopRemain);
+                    _logger.LogInformation("Queued Background Task {Guid} is running. current Loop = {DelayLoop} / Loop remaining = {3}", guid, delayLoop, loopRemain);
                 }
 
                 if (delayLoop == loopCount)
                 {
                     bool isDeletedSuccess = await _cache.RemoveHashedAsync(serverNum, guid); //HashExistsAsync
-                    _logger.LogInformation("Queued Background Task {Guid} is complete on Server No. {ServerNum} / isDeleteSuceess = {3}.", guid, serverNum, isDeletedSuccess);
-                    int checkDeletedSuceess = await _cache.GetHashedAsync<int>(serverNum, guid); // проверку и сообщение о нём можно убрать после отладки
-                    _logger.LogInformation("Deleted field {Guid} checked on Server No. {ServerNum} / value = {3}.", guid, serverNum, checkDeletedSuceess);
+                    _logger.LogInformation("Queued Background Task {Guid} is complete on Server No. {ServerNum} / isDeleteSuccess = {3}.", guid, serverNum, isDeletedSuccess);
+                    //int checkDeletedSuccess = await _cache.GetHashedAsync<int>(serverNum, guid); // проверку и сообщение о нём можно убрать после отладки
+                    //_logger.LogInformation("Deleted field {Guid} checked on Server No. {ServerNum} / value = {3}.", guid, serverNum, checkDeletedSuccess);
                 }
                 else
                 {
                     bool isDeletedSuccess = await _cache.RemoveHashedAsync(serverNum, guid);
-                    _logger.LogInformation("Queued Background Task {Guid} was cancelled on Server No. {ServerNum} / isDeleteSuceess = {3}.", guid, serverNum, isDeletedSuccess);
+                    _logger.LogInformation("Queued Background Task {Guid} was cancelled on Server No. {ServerNum} / isDeleteSuccess = {3}.", guid, serverNum, isDeletedSuccess);
                     // записать какой-то ключ насчёт неудачи и какую-то информацию о процессе?
-                    int checkDeletedSuceess = await _cache.GetHashedAsync<int>(serverNum, guid);
+                    int checkDeletedSuccess = await _cache.GetHashedAsync<int>(serverNum, guid);
                 }
             });
         }

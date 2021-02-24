@@ -40,7 +40,7 @@ namespace BackgroundTasksQueue
                         throw;
                     }
 
-                    services.AddSingleton<ThisBackServerGuid>();
+                    services.AddSingleton<GenerateThisBackServerGuid>();
                     services.AddSingleton<ISettingConstants, SettingConstants>();
                     services.AddHostedService<QueuedHostedService>();
                     services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
@@ -50,18 +50,19 @@ namespace BackgroundTasksQueue
                 });
     }
 
-    public class ThisBackServerGuid
+    // вставить генерацию уникального номера в сервис констант
+    public class GenerateThisBackServerGuid
     {
-        private readonly string thisBackServerGuid;
+        private readonly string _thisBackServerGuid;
 
-        public ThisBackServerGuid()
+        public GenerateThisBackServerGuid()
         {
-            thisBackServerGuid = Guid.NewGuid().ToString();
+            _thisBackServerGuid = Guid.NewGuid().ToString();
         }        
 
-        public string GetThisBackServerGuid()
+        public string ThisBackServerGuid()
         {
-            return thisBackServerGuid;
+            return _thisBackServerGuid;
         }
     }
     
