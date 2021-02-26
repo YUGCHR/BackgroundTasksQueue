@@ -96,15 +96,18 @@ namespace BackgroundTasksQueue.Services
                 isExistEventKeyFrontGivesTask = await _cache.KeyExistsAsync(eventKeyFrontGivesTask);                
 
                 // после сообщения подписки об обновлении ключа, достаём список свободных задач
+                // список получается неполный! 
                 IDictionary<string, string> tasksList = await _cache.GetHashedAllAsync<string>(eventKeyFrontGivesTask);
                 int tasksListCount = tasksList.Count;
                 _logger.LogInformation(403, "TasksList fetched - tasks count = {1}.", tasksListCount);
-                if(tasksListCount == 0) 
+                if(tasksListCount == 0) // временный костыль - 0 - это задач в ключе не осталось, возможно, только что (перед носом) забрали последнюю
                 { return;}
+
                 // generate random integers from 0 to guids count
                 Random rand = new Random();
-                // если осталась одна задача, кубик бросать не надо
+                // индекс словаря по умолчанию
                 int diceRoll = tasksListCount - 1;
+                // если осталась одна задача, кубик бросать не надо
                 if (tasksListCount > 1)
                 {
                     diceRoll = rand.Next(0, tasksListCount - 1);
@@ -146,6 +149,8 @@ namespace BackgroundTasksQueue.Services
 
                     // далее в отдельный метод и ждём в нём, пока не закончится выполнение всех задач
                     await TasksFromKeysToQueue(guidValue, backServerGuid);
+
+                    // тут ждать, пока не будут посчитаны всё задачи пакета
 
                     // выйти из цикла можем только когда не останется задач в ключе кафе
                 }
