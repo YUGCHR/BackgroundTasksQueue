@@ -63,19 +63,20 @@ namespace BackgroundTasksQueue
 
             //string test = ThisBackServerGuid.GetThisBackServerGuid(); // guid from static class
             // получаем уникальный номер этого сервера, сгенерированный при старте экземпляра сервера
-            string backServerGuid = $"{eventKeysSet.PrefixBackServer}:{_guid}"; // Guid.NewGuid()
+            //string backServerGuid = $"{eventKeysSet.PrefixBackServer}:{_guid}"; // Guid.NewGuid()
             //EventId aaa = new EventId(222, "INIT");
-            _logger.LogInformation(101, "INIT No: {0} - guid of This Server was fetched in MonitorLoop.", backServerGuid);
+            string backServerPrefixGuid = eventKeysSet.BackServerPrefixGuid;
+            _logger.LogInformation(101, "INIT No: {0} - guid of This Server was fetched in MonitorLoop.", );
 
             // в значение можно положить время создания сервера
             // проверить, что там за время на ключах, подумать, нужно ли разное время для разных ключей - скажем, кафе и регистрация серверов - день, пакет задач - час
             // регистрируем поле guid сервера на ключе регистрации серверов
-            await _cache.SetHashedAsync<string>(eventKeysSet.EventKeyBackReadiness, backServerGuid, backServerGuid, eventKeysSet.Ttl);
+            await _cache.SetHashedAsync<string>(eventKeysSet.EventKeyBackReadiness, backServerPrefixGuid, backServerPrefixGuid, eventKeysSet.Ttl);
             // восстановить время жизни ключа регистрации сервера перед новой охотой - где и как?
             // при завершении сервера успеть удалить своё поле из ключа регистрации серверов - обработать cancellationToken
 
             // подписываемся на ключ сообщения о появлении свободных задач
-            _subscribe.SubscribeOnEventRun(eventKeysSet, backServerGuid);
+            _subscribe.SubscribeOnEventRun(eventKeysSet);
 
             // слишком сложная цепочка guid
             // оставить в общем ключе задач только поле, известное контроллеру и в значении сразу положить сумму задачу в модели
@@ -123,6 +124,9 @@ namespace BackgroundTasksQueue
         {
             return new EventKeyNames
             {
+                TaskDelayTimeInSeconds = _constant.GetTaskDelayTimeInSeconds, // время задержки в секундах для эмулятора счета задачи
+                BalanceOfTasksAndProcesses = _constant.GetBalanceOfTasksAndProcesses, // соотношение количества задач и процессов для их выполнения на back-processes-servers (количества задач разделить на это число и сделать столько процессов)
+                MaxProcessesCountOnServer = _constant.GetMaxProcessesCountOnServer, // максимальное количество процессов на back-processes-servers (минимальное - 1)
                 EventKeyFrom = _constant.GetEventKeyFrom, // "subscribeOnFrom" - ключ для подписки на команду запуска эмулятора сервера
                 EventFieldFrom = _constant.GetEventFieldFrom, // "count" - поле для подписки на команду запуска эмулятора сервера
                 EventCmd = KeyEvent.HashSet,
@@ -133,9 +137,18 @@ namespace BackgroundTasksQueue
                 PrefixPackage = _constant.GetPrefixPackage, // package:guid
                 PrefixTask = _constant.GetPrefixTask, // task:guid
                 PrefixBackServer = _constant.GetPrefixBackServer, // backserver:guid
+                BackServerGuid = _guid, // this server guid
+                BackServerPrefixGuid = $"{_constant.GetPrefixBackServer}:{_guid}", // backserver:(this server guid)
+                PrefixProcessAdd = _constant.GetPrefixProcessAdd, // process:add
+                PrefixProcessCancel = _constant.GetPrefixProcessCancel, // process:cancel
+                PrefixProcessCount = _constant.GetPrefixProcessCount, // process:count
                 EventFieldFront = _constant.GetEventFieldFront,
                 EventKeyBacksTasksProceed = _constant.GetEventKeyBacksTasksProceed, //  ключ выполняемых/выполненных задач                
-                Ttl = TimeSpan.FromDays(_constant.GetKeyFromTimeDays) // срок хранения ключа eventKeyFrom
+                EventKeyFromTimeDays = TimeSpan.FromDays(_constant.GetEventKeyFromTimeDays), // срок хранения ключа eventKeyFrom
+                EventKeyBackReadinessTimeDays = TimeSpan.FromDays(_constant.GetEventKeyBackReadinessTimeDays), // срок хранения 
+                EventKeyFrontGivesTaskTimeDays = TimeSpan.FromDays(_constant.GetEventKeyFrontGivesTaskTimeDays), // срок хранения ключа 
+                EventKeyBackServerMainTimeDays = TimeSpan.FromDays(_constant.GetEventKeyBackServerMainTimeDays), // срок хранения ключа 
+                EventKeyBackServerAuxiliaryTimeDays = TimeSpan.FromDays(_constant.GetEventKeyBackServerAuxiliaryTimeDays), // срок хранения ключа 
             };
         }
     }
