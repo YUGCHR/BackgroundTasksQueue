@@ -1,10 +1,13 @@
 using System;
-using BackgroundTasksQueue.Services;
+using System.IO;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
 using CachingFramework.Redis;
 using CachingFramework.Redis.Contracts.Providers;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
+using Microsoft.Extensions.Configuration;
+using BackgroundTasksQueue.Services;
 
 namespace BackgroundTasksQueue
 {
@@ -20,13 +23,32 @@ namespace BackgroundTasksQueue
             monitorLoop.StartMonitorLoop();
 
             host.Run();
-        }        
+        }
 
         public static IHostBuilder CreateHostBuilder(string[] args) =>
             Host.CreateDefaultBuilder(args)
-                .ConfigureServices((hostContext, services) =>
-                {
-                    try
+            .UseContentRoot(Directory.GetCurrentDirectory())
+            .ConfigureAppConfiguration((hostContext, config) =>
+            {
+                var env = hostContext.HostingEnvironment;
+
+                // find the shared folder in the parent folder
+                string[] paths = { env.ContentRootPath, "..", "..", "SharedSettings" };
+                var sharedFolder = Path.Combine(paths);
+
+                //load the SharedSettings first, so that appsettings.json overrwrites it
+                config
+                    .AddJsonFile(Path.Combine(sharedFolder, "sharedSettings.json"), optional: true)
+                    .AddJsonFile("appsettings.json", optional: true)
+                    .AddJsonFile($"appsettings.{env.EnvironmentName}.json", optional: true);
+
+                config.AddEnvironmentVariables();
+            })
+            .ConfigureLogging((ctx, log) => { /* elided for brevity */ })
+            .UseDefaultServiceProvider((ctx, opts) => { /* elided for brevity */ })
+            .ConfigureServices((hostContext, services) =>
+            {
+                try
                     {
                         ConnectionMultiplexer muxer = ConnectionMultiplexer.Connect("localhost");
                         services.AddSingleton<ICacheProviderAsync>(new RedisContext(muxer).Cache);
@@ -58,14 +80,14 @@ namespace BackgroundTasksQueue
         public GenerateThisBackServerGuid()
         {
             _thisBackServerGuid = Guid.NewGuid().ToString();
-        }        
+        }
 
         public string ThisBackServerGuid()
         {
             return _thisBackServerGuid;
         }
     }
-    
+
     //public static class ThisBackServerGuid
     //{
     //    static ThisBackServerGuid()

@@ -50,18 +50,19 @@ namespace BackgroundTasksQueue.Services
             string eventKeyFrontGivesTask = eventKeysSet.EventKeyFrontGivesTask;
             _logger.LogInformation(201, "This BackServer subscribed on key {0}.", eventKeyFrontGivesTask);
 
-            bool flagEvent = true;
+            // типовая блокировка множественной подписки до специального разрешения повторной подписки
+            bool flagToBlockEventRun = true;
 
             _keyEvents.Subscribe(eventKeyFrontGivesTask, async (string key, KeyEvent cmd) =>
             {
-                if (cmd == eventKeysSet.EventCmd && flagEvent)
+                if (cmd == eventKeysSet.EventCmd && flagToBlockEventRun)
                 {
                     // временная защёлка, чтобы подписка выполнялась один раз
-                    flagEvent = false;
-                    _logger.LogInformation(301, "Key {Key} with command {Cmd} was received, flagEvent = {Flag}.", eventKeyFrontGivesTask, cmd, flagEvent);
+                    flagToBlockEventRun = false;
+                    _logger.LogInformation(301, "Key {Key} with command {Cmd} was received, flagToBlockEventRun = {Flag}.", eventKeyFrontGivesTask, cmd, flagToBlockEventRun);
 
                     // вернуть изменённое значение flagEvent из FetchKeysOnEventRun для возобновления подписки
-                    flagEvent = await FetchKeysOnEventRun(eventKeysSet);
+                    flagToBlockEventRun = await FetchKeysOnEventRun(eventKeysSet);
 
                     // что будет, если во время ожидания FetchKeysOnEventRun придёт новое сообщение по подписке? проверить экспериментально
                     _logger.LogInformation(901, "END - FetchKeysOnEventRun finished and This BackServer waits the next event.");
@@ -96,6 +97,11 @@ namespace BackgroundTasksQueue.Services
             {
                 // проверить существование ключа, может, все задачи давно разобрали и ключ исчез
                 isExistEventKeyFrontGivesTask = await _cache.KeyExistsAsync(eventKeyFrontGivesTask);
+                _logger.LogInformation(402, "isExistEventKeyFrontGivesTask = {1}.", isExistEventKeyFrontGivesTask);
+
+                if (!isExistEventKeyFrontGivesTask)
+                // если ключа нет, тогда возвращаемся в состояние подписки на ключ кафе и ожидания события по этой подписке                
+                { return false; } // надо true
 
                 // после сообщения подписки об обновлении ключа, достаём список свободных задач
                 // список получается неполный! - оказывается, потому, что фронт не успеваем залить остальные поля, когда бэк с первым полем уже здесь
@@ -105,40 +111,32 @@ namespace BackgroundTasksQueue.Services
 
                 // временный костыль - 0 - это задач в ключе не осталось - возможно, только что (перед носом) забрали последнюю
                 if (tasksListCount == 0)
-                // возвращаемся в состояние подписки на ключ кафе и ожидания события по этой подписке                
+                // тогда возвращаемся в состояние подписки на ключ кафе и ожидания события по этой подписке                
                 { return true; }
 
-                // generate random integers from 0 to guids count
-                Random rand = new Random();
-                // индекс словаря по умолчанию
-                int diceRoll = tasksListCount - 1;
-                // если осталась одна задача, кубик бросать не надо
-                if (tasksListCount > 1)
-                {
-                    diceRoll = rand.Next(0, tasksListCount - 1);
-                }
-                var (guidField, guidValue) = tasksList.ElementAt(diceRoll);
+                // выбираем случайное поле пакета задач - скорее всего, первая попытка будет только с одним полем, остальные не успеют положить и будет драка, но на второй попытке уже разойдутся по разным полям
+                (string tasksPakageGuidField, string tasksPakageGuidValue) = tasksList.ElementAt(DiceRoll(tasksListCount));
 
-                // проверяем захват задачи - пробуем удалить выбранное поле ключа
-                // isDeleteSuccess сделать методом и вызвать прямо из if
+                // проверяем захват задачи - пробуем удалить выбранное поле ключа                
                 // в дальнейшем можно вместо Remove использовать RedLock
-                bool isDeleteSuccess = await _cache.RemoveHashedAsync(eventKeyFrontGivesTask, guidField);
+                bool isDeleteSuccess = await _cache.RemoveHashedAsync(eventKeyFrontGivesTask, tasksPakageGuidField);
                 // здесь может разорваться цепочка между ключом, который известен контроллеру и ключом пакета задач
                 _logger.LogInformation(411, "This BackServer reported - isDeleteSuccess = {1}.", isDeleteSuccess);
 
                 if (isDeleteSuccess)
                 {
-                    _logger.LogInformation(421, "This BackServer fetched taskPackageKey {1} successfully.", guidField); // победитель по жизни
+                    _logger.LogInformation(421, "This BackServer fetched taskPackageKey {1} successfully.", tasksPakageGuidField); // победитель по жизни
+                    // следующие две регистрации пока непонятно, зачем нужны - доступ к состоянию пакета задач всё равно по ключу пакета
 
                     // регистрируем полученную задачу на ключе выполняемых/выполненных задач
                     // поле - исходный ключ пакета (известный контроллеру, по нему он найдёт сервер, выполняющий его задание)
                     // пока что поле задачи в кафе и ключ самой задачи совпадают, поэтому контроллер может напрямую читать состояние пакета задач по известному ему ключу
-                    await _cache.SetHashedAsync(eventKeyBacksTasksProceed, guidField, backServerPrefixGuid);
-                    _logger.LogInformation(431, "Tasks package was registered on key {0} - \n      with source package key {1} and original package key {2}.", eventKeyBacksTasksProceed, guidField, guidValue);
+                    await _cache.SetHashedAsync(eventKeyBacksTasksProceed, tasksPakageGuidField, backServerPrefixGuid);
+                    _logger.LogInformation(431, "Tasks package was registered on key {0} - \n      with source package key {1} and original package key {2}.", eventKeyBacksTasksProceed, tasksPakageGuidField, tasksPakageGuidValue);
 
                     // регистрируем исходный ключ и ключ пакета задач на ключе сервера - чтобы не разорвать цепочку
-                    await _cache.SetHashedAsync(backServerPrefixGuid, guidField, guidValue);
-                    _logger.LogInformation(441, "This BackServer registered tasks package - \n      with source package key {1} and original package key {2}.", guidField, guidValue);
+                    await _cache.SetHashedAsync(backServerPrefixGuid, tasksPakageGuidField, tasksPakageGuidValue);
+                    _logger.LogInformation(441, "This BackServer registered tasks package - \n      with source package key {1} and original package key {2}.", tasksPakageGuidField, tasksPakageGuidValue);
 
                     // и по завершению выполнения задач хорошо бы удалить процессы
                     // нужен внутрисерверный ключ (константа), где каждый из сервисов (каждого) сервера может узнать номер сервера, на котором запущен - чтобы правильно подписаться на событие
@@ -147,8 +145,8 @@ namespace BackgroundTasksQueue.Services
                     // ключ добавления одного процесса "task:add"
                     // ключ удаления одного процесса "task:del"
 
-                    // далее в отдельный метод и ждём в нём, пока не закончится выполнение всех задач
-                    int taskPackageCount = await TasksFromKeysToQueue(guidValue, backServerPrefixGuid);
+                    // складываем задачи во внутреннюю очередь сервера
+                    int taskPackageCount = await TasksFromKeysToQueue(tasksPakageGuidField, tasksPakageGuidValue, backServerPrefixGuid);
 
                     // здесь подходящее место, чтобы определить количество процессов, выполняющих задачи из пакета - в зависимости от количества задач, но не более максимума из константы
                     // PrefixProcessAdd - префикс ключа (+ backServerGuid) управления добавлением процессов
@@ -160,7 +158,7 @@ namespace BackgroundTasksQueue.Services
                     int addProcessesCount = await AddProcessesToPerformingTasks(eventKeysSet, taskPackageCount);
 
                     // тут ждать, пока не будут посчитаны всё задачи пакета
-                    int percents = await CheckingAllTasksCompletion(guidField);
+                    int percents = await CheckingAllTasksCompletion(tasksPakageGuidField);
 
                     // выйти из цикла можем только когда не останется задач в ключе кафе
                 }
@@ -176,12 +174,28 @@ namespace BackgroundTasksQueue.Services
             // возвращаемся в состояние подписки на ключ кафе и ожидания события по этой подписке
             _logger.LogInformation(491, "This BackServer goes over to the subscribe event awaiting.");
             // восстанавливаем условие разрешения обработки подписки
-            return true;
+            return false; // надо true
+        }
+
+        private int DiceRoll(int tasksListCount)
+        {
+            // generate random integers from 0 to guids count
+            Random rand = new();
+            // индекс словаря по умолчанию
+            int diceRoll = tasksListCount - 1;
+            // если осталась одна задача, кубик бросать не надо
+            if (tasksListCount > 1)
+            {
+                diceRoll = rand.Next(0, tasksListCount - 1);
+            }
+            _logger.LogInformation(407, "DiceRoll rolled {1}.", diceRoll);
+            return diceRoll;
         }
 
         private async Task<int> CheckingAllTasksCompletion(string guidField)
         {
-
+            // тут подписаться на ключ пакета задач, но будет много событий
+            // можно ставить блокировку на подписку и не отвлекаться на события, пока не закончена очередная проверка
 
             return default;
         }
@@ -190,15 +204,17 @@ namespace BackgroundTasksQueue.Services
         {
             string backServerPrefixGuid = eventKeysSet.BackServerPrefixGuid;
             string backServerGuid = eventKeysSet.BackServerGuid;
-            string prefixProcessAdd = eventKeysSet.PrefixProcessAdd;            
+            string prefixProcessAdd = eventKeysSet.PrefixProcessAdd;
             string eventFieldBack = eventKeysSet.EventFieldBack;
             string eventKeyProcessAdd = $"{prefixProcessAdd}:{backServerGuid}"; // process:add:(this server guid) 
 
+            // вычисляем нужное количество процессов
             int toAddProcessesCount = CalcAddProcessesCount(eventKeysSet, taskPackageCount);
 
+            // создаём ключ добавления процессов и в значении нужное количество процессов
             await _cache.SetHashedAsync(eventKeyProcessAdd, eventFieldBack, toAddProcessesCount);
 
-            _logger.LogInformation(511, "This BackServer ask to start {0} processes, key = {1}, field = {2}.", toAddProcessesCount, eventKeyProcessAdd, eventFieldBack);
+            _logger.LogInformation(517, "This BackServer ask to start {0} processes, key = {1}, field = {2}.", toAddProcessesCount, eventKeyProcessAdd, eventFieldBack);
             return toAddProcessesCount;
         }
 
@@ -216,31 +232,35 @@ namespace BackgroundTasksQueue.Services
                     return toAddProcessesCount;
                 // больше нуля - основной вариант - делим количество задач на эту константу и если она больше максимума, берём константу максимума
                 case > 0:
-                    toAddProcessesCount = taskPackageCount / balanceOfTasksAndProcesses;
+                    int multiplier = 10000;
+                    toAddProcessesCount = (taskPackageCount * multiplier / balanceOfTasksAndProcesses) / multiplier;
                     // если константа максимума неправильная - 0 или отрицательная, игнорируем ее
                     if (toAddProcessesCount > maxProcessesCountOnServer && maxProcessesCountOnServer > 0)
                     {
                         toAddProcessesCount = maxProcessesCountOnServer;
                     }
+                    if (toAddProcessesCount < 1)
+                    { toAddProcessesCount = 1; }
                     return toAddProcessesCount;
                 // меньше нуля - тайный вариант для настройки - количество процессов равно константе (с обратным знаком, естественно)
                 case < 0:
                     toAddProcessesCount = balanceOfTasksAndProcesses * -1;
+                    _logger.LogInformation(517, "CalcAddProcessesCount calculated total {1} processes are necessary.", toAddProcessesCount);
                     return toAddProcessesCount;
             }
         }
 
-        private async Task<int> TasksFromKeysToQueue(string guidValue, string backServerGuid)
+        private async Task<int> TasksFromKeysToQueue(string tasksPakageGuidField, string tasksPakageGuidValue, string backServerPrefixGuid)
         {
-            IDictionary<string, int> taskPackage = await _cache.GetHashedAllAsync<int>(guidValue); // получили пакет заданий - id задачи и данные (int) для неё
+            IDictionary<string, int> taskPackage = await _cache.GetHashedAllAsync<int>(tasksPakageGuidValue); // получили пакет заданий - id задачи и данные (int) для неё
             int taskPackageCount = taskPackage.Count;
             foreach (var t in taskPackage)
             {
-                var (taskGuid, cycleCount) = t;
+                var (singleTaskGuid, assignmentTerms) = t;
                 // складываем задачи во внутреннюю очередь сервера
-                _task2Queue.StartWorkItem(backServerGuid, taskGuid, cycleCount);
-                await _cache.SetHashedAsync(backServerGuid, taskGuid, cycleCount); // создаём ключ для контроля выполнения задания из пакета
-                _logger.LogInformation(501, "This BackServer sent Task with ID {1} and {2} cycles to Queue.", taskGuid, cycleCount);
+                _task2Queue.StartWorkItem(backServerPrefixGuid, tasksPakageGuidValue, singleTaskGuid, assignmentTerms);
+                //await _cache.SetHashedAsync(backServerPrefixGuid, singleTaskGuid, assignmentTerms); // создаём ключ для контроля выполнения задания из пакета
+                _logger.LogInformation(501, "This BackServer sent Task with ID {1} and {2} cycles to Queue.", singleTaskGuid, assignmentTerms);
             }
 
             _logger.LogInformation(511, "This BackServer sent total {1} tasks to Queue.", taskPackageCount);
