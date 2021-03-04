@@ -15,7 +15,7 @@ namespace BackgroundTasksQueue.Services
     {
         public Task<string> FetchGuidFieldTaskRun(string eventKeyRun, string eventFieldRun);
         public void SubscribeOnEventRun(EventKeyNames eventKeysSet);
-        public void SubscribeOnEventAdd(string eventKey, KeyEvent eventCmd);
+        public void SubscribeOnEventCheck(string eventKey, KeyEvent eventCmd);
     }
 
     public class OnKeysEventsSubscribeService : IOnKeysEventsSubscribeService
@@ -37,7 +37,7 @@ namespace BackgroundTasksQueue.Services
             _keyEvents = keyEvents;
         }
 
-        public async Task<string> FetchGuidFieldTaskRun(string eventKeyRun, string eventFieldRun)
+        public async Task<string> FetchGuidFieldTaskRun(string eventKeyRun, string eventFieldRun) // not used
         {
             string eventGuidFieldRun = await _cache.GetHashedAsync<string>(eventKeyRun, eventFieldRun); //получить guid поле для "task:run"
 
@@ -70,10 +70,10 @@ namespace BackgroundTasksQueue.Services
             });
 
             string eventKeyCommand = $"Key = {eventKeyFrontGivesTask}, Command = {eventKeysSet.EventCmd}";
-            _logger.LogInformation("You subscribed on event - {EventKey}.", eventKeyCommand);
+            _logger.LogInformation(19205, "You subscribed on event - {EventKey}.", eventKeyCommand);
         }
 
-        private async Task<bool> FetchKeysOnEventRun(EventKeyNames eventKeysSet)
+        private async Task<bool> FetchKeysOnEventRun(EventKeyNames eventKeysSet) // this Main
         {
             string backServerPrefixGuid = eventKeysSet.BackServerPrefixGuid;
             string eventKeyFrontGivesTask = eventKeysSet.EventKeyFrontGivesTask;
@@ -138,12 +138,15 @@ namespace BackgroundTasksQueue.Services
                     await _cache.SetHashedAsync(backServerPrefixGuid, tasksPakageGuidField, tasksPakageGuidValue);
                     _logger.LogInformation(441, "This BackServer registered tasks package - \n      with source package key {1} and original package key {2}.", tasksPakageGuidField, tasksPakageGuidValue);
 
+
+                    // тут подписаться (SubscribeOnEventCheck) на ключ пакета задач для контроля выполнения, но будет много событий
+                    // каждая задача будет записывать в этот ключ своё состояние каждый цикл - надо ли так делать?
+
+
                     // и по завершению выполнения задач хорошо бы удалить процессы
                     // нужен внутрисерверный ключ (константа), где каждый из сервисов (каждого) сервера может узнать номер сервера, на котором запущен - чтобы правильно подписаться на событие
                     // сервера одинаковые и жёлуди у них тоже одинаковые, разница только в номере, который сервер генерирует при своём старте
-                    // вот этот номер нужен сервисам, чтобы подписаться на события своего сервера, а не соседнего
-                    // ключ добавления одного процесса "task:add"
-                    // ключ удаления одного процесса "task:del"
+                    // вот этот номер нужен сервисам, чтобы подписаться на события своего сервера, а не соседнего                    
 
                     // складываем задачи во внутреннюю очередь сервера
                     int taskPackageCount = await TasksFromKeysToQueue(tasksPakageGuidField, tasksPakageGuidValue, backServerPrefixGuid);
@@ -154,12 +157,20 @@ namespace BackgroundTasksQueue.Services
                     // в значение положить требуемое количество процессов
                     // имя поля должно быть общим для считывания значения
                     // PrefixProcessCount - 
-                    // не забыть обнулить (или удалить) ключ после считывания и добавления процессов
+                    // не забыть обнулить (или удалить) ключ после считывания и добавления процессов - можно и не удалять, всё равно, пока его не перепишут, он больше никого не интересует
+                    // можно в качестве поля использовать гуид пакета задач, но, наверное, это лишние сложности, всё равно процессы общие
                     int addProcessesCount = await AddProcessesToPerformingTasks(eventKeysSet, taskPackageCount);
 
                     // тут ждать, пока не будут посчитаны всё задачи пакета
-                    int percents = await CheckingAllTasksCompletion(tasksPakageGuidField);
-
+                    int completionPercentage = await CheckingAllTasksCompletion(tasksPakageGuidField);
+                    // если проценты не сто, то какая-то задача осталась невыполненной, надо сообщить на подписку диспетчеру (потом)
+                    int hundredPercents = 100; // from constants
+                    if (completionPercentage < hundredPercents)
+                    {
+                        await _cache.SetHashedAsync("dispatcherSubscribe:thisServerGuid", "thisTasksPackageKey", completionPercentage); // как-то так
+                    }
+                    // тут удалить все процессы (потом)
+                    int cancelExistingProcesses = await CancelExistingProcesses(eventKeysSet, addProcessesCount, completionPercentage);
                     // выйти из цикла можем только когда не останется задач в ключе кафе
                 }
             }
@@ -177,6 +188,51 @@ namespace BackgroundTasksQueue.Services
             return false; // надо true
         }
 
+        // вызвать из монитора или откуда-то из сервиса?
+        // точно не из монитора - там неизвестен гуид пакета
+        // можно из первого места, где получаем гуид пакета
+        public void SubscribeOnEventCheck(EventKeyNames eventKeysSet, string guidField)
+        {
+            // eventKey - tasks package guid, где взять?
+            string eventKeyTasksPackage = "tasks package guid, где взять?"; // надо получить в guidField или получить ключ, где можно взять?
+            _logger.LogInformation(205, "This BackServer subscribed on key {0}.", eventKeyTasksPackage);
+
+            // типовая блокировка множественной подписки до специального разрешения повторной подписки
+            bool flagToBlockEventCheck = true;
+
+            _keyEvents.Subscribe(eventKeyTasksPackage, async (string key, KeyEvent cmd) =>
+            {
+                if (cmd == eventKeysSet.EventCmd && flagToBlockEventCheck)
+                {
+                    // временная защёлка, чтобы подписка выполнялась один раз
+                    flagToBlockEventCheck = false;
+                    _logger.LogInformation(306, "Key {Key} with command {Cmd} was received, flagToBlockEventRun = {Flag}.", eventKeyFrontGivesTask, cmd, flagToBlockEventRun);
+
+                    // вернуть изменённое значение flagEvent из FetchKeysOnEventRun для возобновления подписки
+                    flagToBlockEventCheck = await CheckingAllTasksCompletion(eventKeysSet);
+
+                    // что будет, если во время ожидания FetchKeysOnEventRun придёт новое сообщение по подписке? проверить экспериментально
+                    _logger.LogInformation(906, "END - FetchKeysOnEventRun finished and This BackServer waits the next event.");
+                }
+            });
+
+            string eventKeyCommand = $"Key = {eventKeyTasksPackage}, Command = {eventKeysSet.EventCmd}";
+            _logger.LogInformation(19206, "You subscribed on event - {EventKey}.", eventKeyCommand);
+        }
+
+        private async Task<int> CheckingAllTasksCompletion(EventKeyNames eventKeysSet) // Main for Check
+        {
+
+
+            
+            // подписку оформить в отдельном методе, а этот вызывать оттуда
+            // можно ставить блокировку на подписку и не отвлекаться на события, пока не закончена очередная проверка
+
+            return default;
+        }
+
+        // все следующие методы перенести в TaskPackageProcessingService
+
         private int DiceRoll(int tasksListCount)
         {
             // generate random integers from 0 to guids count
@@ -192,13 +248,22 @@ namespace BackgroundTasksQueue.Services
             return diceRoll;
         }
 
-        private async Task<int> CheckingAllTasksCompletion(string guidField)
+        private async Task<int> CancelExistingProcesses(EventKeyNames eventKeysSet, int toCancelProcessesCount, int completionPercentage)
         {
-            // тут подписаться на ключ пакета задач, но будет много событий
-            // можно ставить блокировку на подписку и не отвлекаться на события, пока не закончена очередная проверка
+            string backServerPrefixGuid = eventKeysSet.BackServerPrefixGuid;
+            string backServerGuid = eventKeysSet.BackServerGuid;
+            string prefixProcessCancel = eventKeysSet.PrefixProcessCancel;
+            string eventFieldBack = eventKeysSet.EventFieldBack;
+            string eventKeyProcessCancel = $"{prefixProcessCancel}:{backServerGuid}"; // process:cancel:(this server guid)
 
-            return default;
-        }
+            int cancelExistingProcesses = 0;
+
+            // создаём ключ удаления процессов и в значении нужное количество процессов
+            await _cache.SetHashedAsync(eventKeyProcessCancel, eventFieldBack, toCancelProcessesCount);
+            _logger.LogInformation(519, "This BackServer ask to CANCEL {0} processes, key = {1}, field = {2}.", toCancelProcessesCount, eventKeyProcessCancel, eventFieldBack);
+
+            return cancelExistingProcesses;
+        }        
 
         private async Task<int> AddProcessesToPerformingTasks(EventKeyNames eventKeysSet, int taskPackageCount)
         {
@@ -208,16 +273,17 @@ namespace BackgroundTasksQueue.Services
             string eventFieldBack = eventKeysSet.EventFieldBack;
             string eventKeyProcessAdd = $"{prefixProcessAdd}:{backServerGuid}"; // process:add:(this server guid) 
 
-            // вычисляем нужное количество процессов
+            // вычисляем нужное количество процессов - перенести вызов в основной поток для наглядности?
             int toAddProcessesCount = CalcAddProcessesCount(eventKeysSet, taskPackageCount);
 
             // создаём ключ добавления процессов и в значении нужное количество процессов
             await _cache.SetHashedAsync(eventKeyProcessAdd, eventFieldBack, toAddProcessesCount);
 
-            _logger.LogInformation(517, "This BackServer ask to start {0} processes, key = {1}, field = {2}.", toAddProcessesCount, eventKeyProcessAdd, eventFieldBack);
+            _logger.LogInformation(518, "This BackServer ask to start {0} processes, key = {1}, field = {2}.", toAddProcessesCount, eventKeyProcessAdd, eventFieldBack);
             return toAddProcessesCount;
         }
 
+        // перенести вызов в основной поток для наглядности?
         private int CalcAddProcessesCount(EventKeyNames eventKeysSet, int taskPackageCount)
         {
             int balanceOfTasksAndProcesses = eventKeysSet.BalanceOfTasksAndProcesses;
@@ -232,7 +298,7 @@ namespace BackgroundTasksQueue.Services
                     return toAddProcessesCount;
                 // больше нуля - основной вариант - делим количество задач на эту константу и если она больше максимума, берём константу максимума
                 case > 0:
-                    int multiplier = 10000;
+                    int multiplier = 10000; // from constants
                     toAddProcessesCount = (taskPackageCount * multiplier / balanceOfTasksAndProcesses) / multiplier;
                     // если константа максимума неправильная - 0 или отрицательная, игнорируем ее
                     if (toAddProcessesCount > maxProcessesCountOnServer && maxProcessesCountOnServer > 0)
@@ -266,12 +332,5 @@ namespace BackgroundTasksQueue.Services
             _logger.LogInformation(511, "This BackServer sent total {1} tasks to Queue.", taskPackageCount);
             return taskPackageCount;
         }
-
-        public void SubscribeOnEventAdd(string eventKey, KeyEvent eventCmd)
-        {
-            string eventKeyCommand = $"Key {eventKey}, HashSet command";
-            _logger.LogInformation("You subscribed on event - {EventKey}.", eventKeyCommand);
-        }
-
     }
 }

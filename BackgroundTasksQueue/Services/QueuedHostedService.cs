@@ -146,7 +146,7 @@ namespace BackgroundTasksQueue.Services
                     CancellationTaskToken = newCts
                 });
                 tasksCount++;
-                // что-то куда-то записать - количество созданных процессов?                
+                // что-то куда-то записать - количество созданных процессов?
 
             }
             _logger.LogInformation(1231, "New Task for Background Processes was added, total count became {Count}", tasksCount);
