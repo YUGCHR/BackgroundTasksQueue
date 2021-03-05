@@ -74,7 +74,8 @@ namespace BackgroundTasksQueue
                 });
     }
 
-    // вставить генерацию уникального номера в сервис констант
+    // вставить генерацию уникального номера в сервис констант - уже нет, оставить здесь
+    // сделать общую библиотеку для всех sln
     public class GenerateThisBackServerGuid
     {
         private readonly string _thisBackServerGuid;

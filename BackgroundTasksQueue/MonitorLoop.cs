@@ -35,7 +35,6 @@ namespace BackgroundTasksQueue
             _cache = cache;
             _subscribe = subscribe;
             _cancellationToken = applicationLifetime.ApplicationStopping;
-
             _guid = thisGuid.ThisBackServerGuid();
         }
 
@@ -66,12 +65,13 @@ namespace BackgroundTasksQueue
             //string backServerGuid = $"{eventKeysSet.PrefixBackServer}:{_guid}"; // Guid.NewGuid()
             //EventId aaa = new EventId(222, "INIT");
             string backServerPrefixGuid = eventKeysSet.BackServerPrefixGuid;
+            string backServerGuid = eventKeysSet.BackServerGuid;
             _logger.LogInformation(101, "INIT No: {0} - guid of This Server was fetched in MonitorLoop.", backServerPrefixGuid);
 
             // в значение можно положить время создания сервера
             // проверить, что там за время на ключах, подумать, нужно ли разное время для разных ключей - скажем, кафе и регистрация серверов - день, пакет задач - час
-            // регистрируем поле guid сервера на ключе регистрации серверов
-            await _cache.SetHashedAsync<string>(eventKeysSet.EventKeyBackReadiness, backServerPrefixGuid, backServerPrefixGuid, eventKeysSet.EventKeyBackReadinessTimeDays);
+            // регистрируем поле guid сервера на ключе регистрации серверов, а в значение кладём чистый гуид, без префикса
+            await _cache.SetHashedAsync<string>(eventKeysSet.EventKeyBackReadiness, backServerPrefixGuid, backServerGuid, eventKeysSet.EventKeyBackReadinessTimeDays);
             // восстановить время жизни ключа регистрации сервера перед новой охотой - где и как?
             // при завершении сервера успеть удалить своё поле из ключа регистрации серверов - обработать cancellationToken
 
