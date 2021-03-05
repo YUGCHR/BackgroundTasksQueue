@@ -91,11 +91,15 @@ namespace BackgroundTasksQueue.Services
                     // регистрируем полученную задачу на ключе выполняемых/выполненных задач
                     // поле - исходный ключ пакета (известный контроллеру, по нему он найдёт сервер, выполняющий его задание)
                     // пока что поле задачи в кафе и ключ самой задачи совпадают, поэтому контроллер может напрямую читать состояние пакета задач по известному ему ключу
-                    await _cache.SetHashedAsync(eventKeyBacksTasksProceed, tasksPakageGuidField, backServerPrefixGuid);
+                    await _cache.SetHashedAsync(eventKeyBacksTasksProceed, tasksPakageGuidField, backServerPrefixGuid, eventKeysSet.EventKeyBackServerAuxiliaryTimeDays); // lifetime!
                     _logger.LogInformation(431, "Tasks package was registered on key {0} - \n      with source package key {1} and original package key {2}.", eventKeyBacksTasksProceed, tasksPakageGuidField, tasksPakageGuidValue);
 
                     // регистрируем исходный ключ и ключ пакета задач на ключе сервера - чтобы не разорвать цепочку
-                    await _cache.SetHashedAsync(backServerPrefixGuid, tasksPakageGuidField, tasksPakageGuidValue);
+                    // цепочка уже не актуальна, можно этот ключ использовать для контроля состояния пакета задач
+                    // для этого в дальнейшем в значение можно класть общее состояние всех задач пакета в процентах
+                    // или не потом, а сейчас класть 0 - тип значения менять нельзя
+                    int packageStateInit = -1; // value in percentages, but have set special value for newly created field now
+                    await _cache.SetHashedAsync(backServerPrefixGuid, tasksPakageGuidField, packageStateInit, eventKeysSet.EventKeyBackServerAuxiliaryTimeDays); // lifetime!
                     _logger.LogInformation(441, "This BackServer registered tasks package - \n      with source package key {1} and original package key {2}.", tasksPakageGuidField, tasksPakageGuidValue);
 
 
@@ -109,6 +113,7 @@ namespace BackgroundTasksQueue.Services
                     // вот этот номер нужен сервисам, чтобы подписаться на события своего сервера, а не соседнего                    
 
                     // складываем задачи во внутреннюю очередь сервера
+                    // tasksPakageGuidValue больше не нужно передавать, вместо нее tasksPakageGuidField
                     int taskPackageCount = await TasksFromKeysToQueue(tasksPakageGuidField, tasksPakageGuidValue, backServerPrefixGuid);
 
                     // здесь подходящее место, чтобы определить количество процессов, выполняющих задачи из пакета - в зависимости от количества задач, но не более максимума из константы
@@ -237,14 +242,15 @@ namespace BackgroundTasksQueue.Services
 
         private async Task<int> TasksFromKeysToQueue(string tasksPakageGuidField, string tasksPakageGuidValue, string backServerPrefixGuid)
         {
-            IDictionary<string, int> taskPackage = await _cache.GetHashedAllAsync<int>(tasksPakageGuidValue); // получили пакет заданий - id задачи и данные (int) для неё
+            IDictionary<string, int> taskPackage = await _cache.GetHashedAllAsync<int>(tasksPakageGuidField); // получили пакет заданий - id задачи и данные (int) для неё
             int taskPackageCount = taskPackage.Count;
             foreach (var t in taskPackage)
             {
                 var (singleTaskGuid, assignmentTerms) = t;
                 // складываем задачи во внутреннюю очередь сервера
-                _task2Queue.StartWorkItem(backServerPrefixGuid, tasksPakageGuidValue, singleTaskGuid, assignmentTerms);
-                //await _cache.SetHashedAsync(backServerPrefixGuid, singleTaskGuid, assignmentTerms); // создаём ключ для контроля выполнения задания из пакета
+                _task2Queue.StartWorkItem(backServerPrefixGuid, tasksPakageGuidField, singleTaskGuid, assignmentTerms);
+                // создаём ключ для контроля выполнения задания из пакета - нет, создаём не тут и не такой (ключ)
+                //await _cache.SetHashedAsync(backServerPrefixGuid, singleTaskGuid, assignmentTerms); 
                 _logger.LogInformation(501, "This BackServer sent Task with ID {1} and {2} cycles to Queue.", singleTaskGuid, assignmentTerms);
             }
 

@@ -32,7 +32,7 @@ namespace BackgroundTasksQueue.Services
             _cache = cache;
         }
 
-        public void StartWorkItem(string backServerPrefixGuid, string tasksPakageGuidValue, string singleTaskGuid, int assignmentTerms)
+        public void StartWorkItem(string backServerPrefixGuid, string tasksPakageGuidField, string singleTaskGuid, int assignmentTerms)
         {
             // Enqueue a background work item
             _taskQueue.QueueBackgroundWorkItem(async token =>
@@ -63,9 +63,10 @@ namespace BackgroundTasksQueue.Services
                     int multiplier = 10000;
                     int completionTaskPercentage = (delayLoop * multiplier / assignmentTerms) / multiplier;
                     _logger.LogInformation("completionTaskPercentage {0} = delayLoop {1} / assignmentTerms {2}", completionTaskPercentage, delayLoop, assignmentTerms);
-                    await _cache.SetHashedAsync(tasksPakageGuidValue, singleTaskGuid, completionTaskPercentage); // обновляем отчёт о прогрессе выполнения задания
+                    // обновляем отчёт о прогрессе выполнения задания
+                    await _cache.SetHashedAsync(tasksPakageGuidField, singleTaskGuid, completionTaskPercentage); 
                     delayLoop++;                    
-                    _logger.LogInformation("Queued Background Task {Guid} is running. current Loop = {DelayLoop} / Loop remaining = {3}", singleTaskGuid, delayLoop, loopRemain);
+                    _logger.LogInformation("Queued Background Task {Guid} is running. Current Loop = {DelayLoop} / Loop remaining = {3}", singleTaskGuid, delayLoop, loopRemain);
                 }
 
                 if (delayLoop == assignmentTerms)

@@ -88,12 +88,13 @@ namespace BackgroundTasksQueue
             // key EventKeyBacksTasksProceed, fields - request:guid (PrefixRequest), values - package:guid (PrefixPackage)
             // method to fetch package (returns dictionary) from request:guid
 
-            // ----------------- вы находитесь здесь
-
             // можно здесь (в while) ждать появления гуид пакета задач, чтобы подписаться на ход его выполнения
             // а можно подписаться на стандартный ключ появления пакета задач - общего для всех серверов, а потом проверять, что это событие на своём сервере
             // хотелось, чтобы вся подписка происходила из monitorLoop, но тут пока никак не узнать номера пакета
             // а если подписываться там, где становится известен номер, придётся перекрёстно подключать сервисы
+
+
+            // ----------------- вы находитесь здесь
 
             while (IsCancellationNotYet())
             {
@@ -139,10 +140,10 @@ namespace BackgroundTasksQueue
                 EventFieldFront = _constant.GetEventFieldFront,
                 EventKeyBacksTasksProceed = _constant.GetEventKeyBacksTasksProceed, //  ключ выполняемых/выполненных задач                
                 EventKeyFromTimeDays = TimeSpan.FromDays(_constant.GetEventKeyFromTimeDays), // срок хранения ключа eventKeyFrom
-                EventKeyBackReadinessTimeDays = TimeSpan.FromDays(_constant.GetEventKeyBackReadinessTimeDays), // срок хранения 
-                EventKeyFrontGivesTaskTimeDays = TimeSpan.FromDays(_constant.GetEventKeyFrontGivesTaskTimeDays), // срок хранения ключа 
-                EventKeyBackServerMainTimeDays = TimeSpan.FromDays(_constant.GetEventKeyBackServerMainTimeDays), // срок хранения ключа 
-                EventKeyBackServerAuxiliaryTimeDays = TimeSpan.FromDays(_constant.GetEventKeyBackServerAuxiliaryTimeDays), // срок хранения ключа 
+                EventKeyBackReadinessTimeDays = TimeSpan.FromDays(_constant.GetEventKeyBackReadinessTimeDays), // срок хранения ключа BackReadiness
+                EventKeyFrontGivesTaskTimeDays = TimeSpan.FromDays(_constant.GetEventKeyFrontGivesTaskTimeDays), // срок хранения ключа FrontGivesTask
+                EventKeyBackServerMainTimeDays = TimeSpan.FromDays(_constant.GetEventKeyBackServerMainTimeDays), // срок хранения ключа BackServerMain
+                EventKeyBackServerAuxiliaryTimeDays = TimeSpan.FromDays(_constant.GetEventKeyBackServerAuxiliaryTimeDays), // срок хранения ключа BackServerAuxiliary
             };
         }
     }
