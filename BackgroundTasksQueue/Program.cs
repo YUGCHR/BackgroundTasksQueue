@@ -8,6 +8,7 @@ using CachingFramework.Redis.Contracts.Providers;
 using StackExchange.Redis;
 using Microsoft.Extensions.Configuration;
 using BackgroundTasksQueue.Services;
+using BackgroundTasksQueue.Library.Services;
 
 namespace BackgroundTasksQueue
 {
@@ -62,7 +63,7 @@ namespace BackgroundTasksQueue
                         throw;
                     }
 
-                    services.AddSingleton<GenerateThisBackServerGuid>();
+                    services.AddSingleton<GenerateThisInstanceGuidService>();
                     services.AddSingleton<ISettingConstants, SettingConstants>();
                     services.AddHostedService<QueuedHostedService>();
                     services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
@@ -72,24 +73,7 @@ namespace BackgroundTasksQueue
                     services.AddSingleton<ITasksPackageCaptureService, TasksPackageCaptureService>();
                     services.AddSingleton<ITasksBatchProcessingService, TasksBatchProcessingService>();
                 });
-    }
-
-    // вставить генерацию уникального номера в сервис констант - уже нет, оставить здесь
-    // сделать общую библиотеку для всех sln
-    public class GenerateThisBackServerGuid
-    {
-        private readonly string _thisBackServerGuid;
-
-        public GenerateThisBackServerGuid()
-        {
-            _thisBackServerGuid = Guid.NewGuid().ToString();
-        }
-
-        public string ThisBackServerGuid()
-        {
-            return _thisBackServerGuid;
-        }
-    }
+    }    
 
     //public static class ThisBackServerGuid
     //{

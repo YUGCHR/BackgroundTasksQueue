@@ -9,7 +9,7 @@ using CachingFramework.Redis.Contracts.Providers;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using BackgroundTasksQueue.Services;
-using BackgroundTasksQueue.Models;
+using BackgroundTasksQueue.Library.Services;
 using BackgroundTasksQueue.Library.Models;
 
 namespace BackgroundTasksQueue
@@ -24,7 +24,7 @@ namespace BackgroundTasksQueue
         private readonly string _guid;
 
         public MonitorLoop(
-            GenerateThisBackServerGuid thisGuid,
+            GenerateThisInstanceGuidService thisGuid,
             ILogger<MonitorLoop> logger,
             ISettingConstants constant,
             ICacheProviderAsync cache,

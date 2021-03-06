@@ -8,7 +8,9 @@ using CachingFramework.Redis.Contracts;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using CachingFramework.Redis.Contracts.Providers;
+using BackgroundTasksQueue.Library.Services;
 using BackgroundTasksQueue.Models;
+using BackgroundTasksQueue.Library.Models;
 
 namespace BackgroundTasksQueue.Services
 {
@@ -23,7 +25,7 @@ namespace BackgroundTasksQueue.Services
         List<BackgroundProcessingTask> completingTasksProcesses = new List<BackgroundProcessingTask>();
 
         public QueuedHostedService(
-            GenerateThisBackServerGuid thisGuid,
+            GenerateThisInstanceGuidService thisGuid,
             IBackgroundTaskQueue taskQueue,
             ILogger<QueuedHostedService> logger,
             ISettingConstants constant,
