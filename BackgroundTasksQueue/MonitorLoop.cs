@@ -10,6 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using BackgroundTasksQueue.Services;
 using BackgroundTasksQueue.Models;
+using BackgroundTasksQueue.Library.Models;
 
 namespace BackgroundTasksQueue
 {
@@ -93,9 +94,6 @@ namespace BackgroundTasksQueue
             // хотелось, чтобы вся подписка происходила из monitorLoop, но тут пока никак не узнать номера пакета
             // а если подписываться там, где становится известен номер, придётся перекрёстно подключать сервисы
 
-
-            // ----------------- вы находитесь здесь
-
             while (IsCancellationNotYet())
             {
                 var keyStroke = Console.ReadKey();
@@ -117,6 +115,11 @@ namespace BackgroundTasksQueue
 
         private EventKeyNames InitialiseEventKeyNames()
         {
+            // потом можно разделить на три метода - фронт, бэк и общий для всех
+            // передавать нужный параметр и через свитч возвращать нужную модель
+            // или модель для всех одинаковая, только заполнять нужные поля
+            // но пока можно всем всё
+
             return new EventKeyNames
             {
                 TaskDelayTimeInSeconds = _constant.GetTaskDelayTimeInSeconds, // время задержки в секундах для эмулятора счета задачи

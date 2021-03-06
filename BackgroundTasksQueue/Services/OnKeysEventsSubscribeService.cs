@@ -4,10 +4,10 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using BackgroundTasksQueue.Models;
 using CachingFramework.Redis.Contracts;
 using CachingFramework.Redis.Contracts.Providers;
 using Microsoft.Extensions.Logging;
+using BackgroundTasksQueue.Library.Models;
 
 namespace BackgroundTasksQueue.Services
 {
@@ -149,7 +149,6 @@ namespace BackgroundTasksQueue.Services
             _logger.LogInformation(511, "The newly created tasks package field was not found in total fileds {0}.", packagesListCount);
             return null;
         }
-
 
         public void SubscribeOnEventCheck(EventKeyNames eventKeysSet, string newlyPackageGuid)
         {

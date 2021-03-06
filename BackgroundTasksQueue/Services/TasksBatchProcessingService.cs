@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using CachingFramework.Redis.Contracts.Providers;
 using Microsoft.Extensions.Logging;
-using BackgroundTasksQueue.Models;
+using BackgroundTasksQueue.Library.Models;
 
 namespace BackgroundTasksQueue.Services
 {
@@ -35,7 +35,7 @@ namespace BackgroundTasksQueue.Services
 
         public async Task<bool> CheckingAllTasksCompletion(EventKeyNames eventKeysSet) // Main for Check
         {
-
+            // ----------------- вы находитесь здесь
 
 
             // подписку оформить в отдельном методе, а этот вызывать оттуда

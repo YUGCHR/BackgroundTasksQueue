@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using CachingFramework.Redis.Contracts.Providers;
 using Microsoft.Extensions.Logging;
-using BackgroundTasksQueue.Models;
+using BackgroundTasksQueue.Library.Models;
 
 namespace BackgroundTasksQueue.Services
 {
