@@ -64,7 +64,7 @@ namespace BackgroundTasksQueue.Services
                     int completionTaskPercentage = (delayLoop * multiplier / assignmentTerms) / multiplier;
                     _logger.LogInformation("completionTaskPercentage {0} = delayLoop {1} / assignmentTerms {2}", completionTaskPercentage, delayLoop, assignmentTerms);
                     // обновляем отчёт о прогрессе выполнения задания
-                    await _cache.SetHashedAsync(tasksPakageGuidField, singleTaskGuid, completionTaskPercentage); 
+                    await _cache.SetHashedAsync(tasksPakageGuidField, singleTaskGuid, completionTaskPercentage); // TimeSpan.FromDays - !!!
                     delayLoop++;                    
                     _logger.LogInformation("Queued Background Task {Guid} is running. Current Loop = {DelayLoop} / Loop remaining = {3}", singleTaskGuid, delayLoop, loopRemain);
                 }

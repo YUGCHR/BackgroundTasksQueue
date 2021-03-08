@@ -38,7 +38,9 @@ namespace BackgroundTasksQueue.Services
             string backServerPrefixGuid = eventKeysSet.BackServerPrefixGuid;
             string eventKeyFrontGivesTask = eventKeysSet.EventKeyFrontGivesTask;
             string eventKeyBacksTasksProceed = eventKeysSet.EventKeyBacksTasksProceed;
-            _logger.LogInformation(401, "This BackServer started FetchKeysOnEventRun.");
+            _logger.LogInformation(401, "This BackServer {0} started FetchKeysOnEventRun.", backServerPrefixGuid);
+            _logger.LogInformation(40101, "This BackServer fetched eventKeyFrontGivesTask = {0}.", eventKeyFrontGivesTask);
+            _logger.LogInformation(40105, "This BackServer fetched eventKeyBacksTasksProceed = {0}.", eventKeyBacksTasksProceed);
 
             // начало главного цикла сразу после срабатывания подписки, условие - пока существует ключ распределения задач
             // считать пакет полей из ключа, если задач больше одной, бросить кубик
@@ -58,7 +60,7 @@ namespace BackgroundTasksQueue.Services
                 // проверить существование ключа, может, все задачи давно разобрали и ключ исчез
                 isExistEventKeyFrontGivesTask = await _cache.KeyExistsAsync(eventKeyFrontGivesTask);
                 _logger.LogInformation(402, "isExistEventKeyFrontGivesTask = {1}.", isExistEventKeyFrontGivesTask);
-
+                
                 if (!isExistEventKeyFrontGivesTask)
                 // если ключа нет, тогда возвращаемся в состояние подписки на ключ кафе и ожидания события по этой подписке                
                 { return false; } // надо true
@@ -75,32 +77,32 @@ namespace BackgroundTasksQueue.Services
                 { return true; }
 
                 // выбираем случайное поле пакета задач - скорее всего, первая попытка будет только с одним полем, остальные не успеют положить и будет драка, но на второй попытке уже разойдутся по разным полям
-                (string tasksPakageGuidField, string tasksPakageGuidValue) = tasksList.ElementAt(DiceRoll(tasksListCount));
+                (string tasksPackageGuidField, string tasksPackageGuidValue) = tasksList.ElementAt(DiceRoll(tasksListCount));
 
                 // проверяем захват задачи - пробуем удалить выбранное поле ключа                
                 // в дальнейшем можно вместо Remove использовать RedLock
-                bool isDeleteSuccess = await _cache.RemoveHashedAsync(eventKeyFrontGivesTask, tasksPakageGuidField);
+                bool isDeleteSuccess = await _cache.RemoveHashedAsync(eventKeyFrontGivesTask, tasksPackageGuidField);
                 // здесь может разорваться цепочка между ключом, который известен контроллеру и ключом пакета задач
                 _logger.LogInformation(411, "This BackServer reported - isDeleteSuccess = {1}.", isDeleteSuccess);
 
                 if (isDeleteSuccess)
                 {
-                    _logger.LogInformation(421, "This BackServer fetched taskPackageKey {1} successfully.", tasksPakageGuidField); // победитель по жизни
+                    _logger.LogInformation(421, "This BackServer fetched taskPackageKey {1} successfully.", tasksPackageGuidField); // победитель по жизни
                     // следующие две регистрации пока непонятно, зачем нужны - доступ к состоянию пакета задач всё равно по ключу пакета
 
                     // регистрируем полученную задачу на ключе выполняемых/выполненных задач
                     // поле - исходный ключ пакета (известный контроллеру, по нему он найдёт сервер, выполняющий его задание)
                     // пока что поле задачи в кафе и ключ самой задачи совпадают, поэтому контроллер может напрямую читать состояние пакета задач по известному ему ключу
-                    await _cache.SetHashedAsync(eventKeyBacksTasksProceed, tasksPakageGuidField, backServerPrefixGuid, eventKeysSet.EventKeyBackServerAuxiliaryTimeDays); // lifetime!
-                    _logger.LogInformation(431, "Tasks package was registered on key {0} - \n      with source package key {1} and original package key {2}.", eventKeyBacksTasksProceed, tasksPakageGuidField, tasksPakageGuidValue);
+                    await _cache.SetHashedAsync(eventKeyBacksTasksProceed, tasksPackageGuidField, backServerPrefixGuid, TimeSpan.FromDays(eventKeysSet.EventKeyBackServerAuxiliaryTimeDays)); // lifetime!
+                    _logger.LogInformation(431, "Tasks package was registered on key {0} - \n      with source package key {1} and original package key {2}.", eventKeyBacksTasksProceed, tasksPackageGuidField, tasksPackageGuidValue);
 
                     // регистрируем исходный ключ и ключ пакета задач на ключе сервера - чтобы не разорвать цепочку
                     // цепочка уже не актуальна, можно этот ключ использовать для контроля состояния пакета задач
                     // для этого в дальнейшем в значение можно класть общее состояние всех задач пакета в процентах
                     // или не потом, а сейчас класть 0 - тип значения менять нельзя
                     int packageStateInit = -1; // value in percentages, but have set special value for newly created field now
-                    await _cache.SetHashedAsync(backServerPrefixGuid, tasksPakageGuidField, packageStateInit, eventKeysSet.EventKeyBackServerAuxiliaryTimeDays); // lifetime!
-                    _logger.LogInformation(441, "This BackServer registered tasks package - \n      with source package key {1} and original package key {2}.", tasksPakageGuidField, tasksPakageGuidValue);
+                    await _cache.SetHashedAsync(backServerPrefixGuid, tasksPackageGuidField, packageStateInit, TimeSpan.FromDays(eventKeysSet.EventKeyBackServerAuxiliaryTimeDays)); // lifetime!
+                    _logger.LogInformation(441, "This BackServer registered tasks package - \n      with source package key {1} and original package key {2}.", tasksPackageGuidField, tasksPackageGuidValue);
 
 
                     // тут подписаться (SubscribeOnEventCheck) на ключ пакета задач для контроля выполнения, но будет много событий
@@ -114,7 +116,7 @@ namespace BackgroundTasksQueue.Services
 
                     // складываем задачи во внутреннюю очередь сервера
                     // tasksPakageGuidValue больше не нужно передавать, вместо нее tasksPakageGuidField
-                    int taskPackageCount = await TasksFromKeysToQueue(tasksPakageGuidField, tasksPakageGuidValue, backServerPrefixGuid);
+                    int taskPackageCount = await TasksFromKeysToQueue(tasksPackageGuidField, tasksPackageGuidValue, backServerPrefixGuid);
 
                     // здесь подходящее место, чтобы определить количество процессов, выполняющих задачи из пакета - в зависимости от количества задач, но не более максимума из константы
                     // PrefixProcessAdd - префикс ключа (+ backServerGuid) управления добавлением процессов
@@ -132,7 +134,7 @@ namespace BackgroundTasksQueue.Services
                     int hundredPercents = 100; // from constants
                     if (completionPercentage < hundredPercents)
                     {
-                        await _cache.SetHashedAsync("dispatcherSubscribe:thisServerGuid", "thisTasksPackageKey", completionPercentage); // как-то так
+                        await _cache.SetHashedAsync("dispatcherSubscribe:thisServerGuid", "thisTasksPackageKey", completionPercentage); // TimeSpan.FromDays - !!! как-то так
                     }
                     // тут удалить все процессы (потом)
                     int cancelExistingProcesses = await CancelExistingProcesses(eventKeysSet, addProcessesCount, completionPercentage);
@@ -183,7 +185,7 @@ namespace BackgroundTasksQueue.Services
             int cancelExistingProcesses = 0;
 
             // создаём ключ удаления процессов и в значении нужное количество процессов
-            await _cache.SetHashedAsync(eventKeyProcessCancel, eventFieldBack, toCancelProcessesCount);
+            await _cache.SetHashedAsync(eventKeyProcessCancel, eventFieldBack, toCancelProcessesCount); // TimeSpan.FromDays - !!!
             _logger.LogInformation(519, "This BackServer ask to CANCEL {0} processes, key = {1}, field = {2}.", toCancelProcessesCount, eventKeyProcessCancel, eventFieldBack);
 
             return cancelExistingProcesses;
@@ -201,7 +203,7 @@ namespace BackgroundTasksQueue.Services
             int toAddProcessesCount = CalcAddProcessesCount(eventKeysSet, taskPackageCount);
 
             // создаём ключ добавления процессов и в значении нужное количество процессов
-            await _cache.SetHashedAsync(eventKeyProcessAdd, eventFieldBack, toAddProcessesCount);
+            await _cache.SetHashedAsync(eventKeyProcessAdd, eventFieldBack, toAddProcessesCount); // TimeSpan.FromDays - !!!
 
             _logger.LogInformation(518, "This BackServer ask to start {0} processes, key = {1}, field = {2}.", toAddProcessesCount, eventKeyProcessAdd, eventFieldBack);
             return toAddProcessesCount;

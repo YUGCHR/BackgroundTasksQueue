@@ -17,7 +17,7 @@ namespace BackgroundTasksQueue.Services
     public class QueuedHostedService : BackgroundService
     {
         private readonly ILogger<QueuedHostedService> _logger;
-        private readonly ISettingConstants _constant;
+        private readonly ISharedDataAccess _data;
         private readonly ICacheProviderAsync _cache;
         private readonly IKeyEventsProvider _keyEvents;
         private readonly string _guid;
@@ -28,13 +28,13 @@ namespace BackgroundTasksQueue.Services
             GenerateThisInstanceGuidService thisGuid,
             IBackgroundTaskQueue taskQueue,
             ILogger<QueuedHostedService> logger,
-            ISettingConstants constant,
+            ISharedDataAccess data,
             ICacheProviderAsync cache,
             IKeyEventsProvider keyEvents)
         {
             TaskQueue = taskQueue;
             _logger = logger;
-            _constant = constant;
+            _data = data;
             _cache = cache;
             _keyEvents = keyEvents;
 
@@ -54,16 +54,22 @@ namespace BackgroundTasksQueue.Services
 
         private async Task BackgroundProcessing(CancellationToken stoppingToken)
         {
+            EventKeyNames eventKeysSet = await _data.FetchAllConstants();
+            //string backServerGuid = _guid ?? throw new ArgumentNullException(nameof(_guid));
+            //eventKeysSet.BackServerGuid = backServerGuid;
+            //string backServerPrefixGuid = $"{eventKeysSet.PrefixBackServer}:{backServerGuid}";
+            //eventKeysSet.BackServerPrefixGuid = backServerPrefixGuid;
+
             //string eventKey = "task:add";
             string cancelKey = "task:del";
             int createdProcessesCount = 0;
-            string backServerGuid = $"{_constant.GetPrefixBackServer}:{_guid}"; // backserver:(this server guid)
+            string backServerGuid = $"{eventKeysSet.PrefixBackServer}:{_guid}"; // backserver:(this server guid)
             _logger.LogInformation(1101, "INIT No: {0} - guid of This Server was fetched in QueuedHostedService.", backServerGuid);
             // создать ключ для подписки из констант
-            string prefixProcessAdd = _constant.GetPrefixProcessAdd; // process:add
+            string prefixProcessAdd = eventKeysSet.PrefixProcessAdd; // process:add
             string eventKeyProcessAdd = $"{prefixProcessAdd}:{_guid}"; // process:add:(this server guid)
             // поле-пустышка, но одинаковое с тем, что создаётся в основном методе - чтобы достать значение
-            string eventFieldBack = _constant.GetEventFieldBack;
+            string eventFieldBack = eventKeysSet.EventFieldBack;
             _logger.LogInformation(1103, "Processes creation on This Server was subscribed on key {0} / field {1}.", eventKeyProcessAdd, eventFieldBack);
             // подписка на ключ добавления бэкграунд процессов(поле без разницы), в значении можно было бы ставить количество необходимых процессов
             // типовая блокировка множественной подписки до специального разрешения повторной подписки

@@ -17,7 +17,7 @@ namespace BackgroundTasksQueue
     public class MonitorLoop
     {
         private readonly ILogger<MonitorLoop> _logger;
-        private readonly ISettingConstants _constant;
+        private readonly ISharedDataAccess _data;
         private readonly CancellationToken _cancellationToken;
         private readonly ICacheProviderAsync _cache;
         private readonly IOnKeysEventsSubscribeService _subscribe;
@@ -26,13 +26,13 @@ namespace BackgroundTasksQueue
         public MonitorLoop(
             GenerateThisInstanceGuidService thisGuid,
             ILogger<MonitorLoop> logger,
-            ISettingConstants constant,
+            ISharedDataAccess data,
             ICacheProviderAsync cache,
             IHostApplicationLifetime applicationLifetime,
             IOnKeysEventsSubscribeService subscribe)
         {
             _logger = logger;
-            _constant = constant;
+            _data = data;
             _cache = cache;
             _subscribe = subscribe;
             _cancellationToken = applicationLifetime.ApplicationStopping;
@@ -54,7 +54,8 @@ namespace BackgroundTasksQueue
             // а несколько (много) серверов могут неспешно выполнять задачи из очереди в бэкграунде
 
             // собрать все константы в один класс
-            EventKeyNames eventKeysSet = InitialiseEventKeyNames();
+            //EventKeyNames eventKeysSet = InitialiseEventKeyNames();
+            EventKeyNames eventKeysSet = await _data.FetchAllConstants();
 
             // множественные контроллеры по каждому запросу (пользователей) создают очередь - каждый создаёт ключ, на который у back-servers подписка, в нём поле со своим номером, а в значении или имя ключа с заданием или само задание            
             // дальше бэк-сервера сами разбирают задания
@@ -65,14 +66,18 @@ namespace BackgroundTasksQueue
             // получаем уникальный номер этого сервера, сгенерированный при старте экземпляра сервера
             //string backServerGuid = $"{eventKeysSet.PrefixBackServer}:{_guid}"; // Guid.NewGuid()
             //EventId aaa = new EventId(222, "INIT");
-            string backServerPrefixGuid = eventKeysSet.BackServerPrefixGuid;
-            string backServerGuid = eventKeysSet.BackServerGuid;
+
+            string backServerGuid = _guid ?? throw new ArgumentNullException(nameof(_guid));
+            eventKeysSet.BackServerGuid = backServerGuid;
+            string backServerPrefixGuid = $"{eventKeysSet.PrefixBackServer}:{backServerGuid}";
+            eventKeysSet.BackServerPrefixGuid = backServerPrefixGuid;
+
             _logger.LogInformation(101, "INIT No: {0} - guid of This Server was fetched in MonitorLoop.", backServerPrefixGuid);
 
             // в значение можно положить время создания сервера
             // проверить, что там за время на ключах, подумать, нужно ли разное время для разных ключей - скажем, кафе и регистрация серверов - день, пакет задач - час
             // регистрируем поле guid сервера на ключе регистрации серверов, а в значение кладём чистый гуид, без префикса
-            await _cache.SetHashedAsync<string>(eventKeysSet.EventKeyBackReadiness, backServerPrefixGuid, backServerGuid, eventKeysSet.EventKeyBackReadinessTimeDays);
+            await _cache.SetHashedAsync<string>(eventKeysSet.EventKeyBackReadiness, backServerPrefixGuid, backServerGuid, TimeSpan.FromDays(eventKeysSet.EventKeyBackReadinessTimeDays));
             // восстановить время жизни ключа регистрации сервера перед новой охотой - где и как?
             // при завершении сервера успеть удалить своё поле из ключа регистрации серверов - обработать cancellationToken
 
@@ -111,43 +116,6 @@ namespace BackgroundTasksQueue
         {
             _logger.LogInformation("Is Cancellation Token obtained? - {1}", _cancellationToken.IsCancellationRequested);
             return !_cancellationToken.IsCancellationRequested; // add special key from Redis?
-        }
-
-        private EventKeyNames InitialiseEventKeyNames()
-        {
-            // потом можно разделить на три метода - фронт, бэк и общий для всех
-            // передавать нужный параметр и через свитч возвращать нужную модель
-            // или модель для всех одинаковая, только заполнять нужные поля
-            // но пока можно всем всё
-
-            return new EventKeyNames
-            {
-                TaskDelayTimeInSeconds = _constant.GetTaskDelayTimeInSeconds, // время задержки в секундах для эмулятора счета задачи
-                BalanceOfTasksAndProcesses = _constant.GetBalanceOfTasksAndProcesses, // соотношение количества задач и процессов для их выполнения на back-processes-servers (количества задач разделить на это число и сделать столько процессов)
-                MaxProcessesCountOnServer = _constant.GetMaxProcessesCountOnServer, // максимальное количество процессов на back-processes-servers (минимальное - 1)
-                EventKeyFrom = _constant.GetEventKeyFrom, // "subscribeOnFrom" - ключ для подписки на команду запуска эмулятора сервера
-                EventFieldFrom = _constant.GetEventFieldFrom, // "count" - поле для подписки на команду запуска эмулятора сервера
-                EventCmd = KeyEvent.HashSet,
-                EventKeyBackReadiness = _constant.GetEventKeyBackReadiness, // ключ регистрации серверов
-                EventFieldBack = _constant.GetEventFieldBack,
-                EventKeyFrontGivesTask = _constant.GetEventKeyFrontGivesTask, // кафе выдачи задач
-                PrefixRequest = _constant.GetPrefixRequest, // request:guid
-                PrefixPackage = _constant.GetPrefixPackage, // package:guid
-                PrefixTask = _constant.GetPrefixTask, // task:guid
-                PrefixBackServer = _constant.GetPrefixBackServer, // backserver:guid
-                BackServerGuid = _guid, // this server guid
-                BackServerPrefixGuid = $"{_constant.GetPrefixBackServer}:{_guid}", // backserver:(this server guid)
-                PrefixProcessAdd = _constant.GetPrefixProcessAdd, // process:add
-                PrefixProcessCancel = _constant.GetPrefixProcessCancel, // process:cancel
-                PrefixProcessCount = _constant.GetPrefixProcessCount, // process:count
-                EventFieldFront = _constant.GetEventFieldFront,
-                EventKeyBacksTasksProceed = _constant.GetEventKeyBacksTasksProceed, //  ключ выполняемых/выполненных задач                
-                EventKeyFromTimeDays = TimeSpan.FromDays(_constant.GetEventKeyFromTimeDays), // срок хранения ключа eventKeyFrom
-                EventKeyBackReadinessTimeDays = TimeSpan.FromDays(_constant.GetEventKeyBackReadinessTimeDays), // срок хранения ключа BackReadiness
-                EventKeyFrontGivesTaskTimeDays = TimeSpan.FromDays(_constant.GetEventKeyFrontGivesTaskTimeDays), // срок хранения ключа FrontGivesTask
-                EventKeyBackServerMainTimeDays = TimeSpan.FromDays(_constant.GetEventKeyBackServerMainTimeDays), // срок хранения ключа BackServerMain
-                EventKeyBackServerAuxiliaryTimeDays = TimeSpan.FromDays(_constant.GetEventKeyBackServerAuxiliaryTimeDays), // срок хранения ключа BackServerAuxiliary
-            };
         }
     }
 }

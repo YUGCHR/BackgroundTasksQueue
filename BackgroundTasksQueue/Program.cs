@@ -50,28 +50,28 @@ namespace BackgroundTasksQueue
             .ConfigureServices((hostContext, services) =>
             {
                 try
-                    {
-                        ConnectionMultiplexer muxer = ConnectionMultiplexer.Connect("localhost");
-                        services.AddSingleton<ICacheProviderAsync>(new RedisContext(muxer).Cache);
-                        services.AddSingleton<IPubSubProvider>(new RedisContext(muxer).PubSub);
-                        services.AddSingleton<IKeyEventsProvider>(new RedisContext(muxer).KeyEvents);
-                    }
-                    catch (Exception ex)
-                    {
-                        string message = ex.Message;
-                        Console.WriteLine($"\n\n Redis server did not start: \n + {message} \n");
-                        throw;
-                    }
+                {
+                    ConnectionMultiplexer muxer = ConnectionMultiplexer.Connect("localhost");
+                    services.AddSingleton<ICacheProviderAsync>(new RedisContext(muxer).Cache);
+                    services.AddSingleton<IPubSubProvider>(new RedisContext(muxer).PubSub);
+                    services.AddSingleton<IKeyEventsProvider>(new RedisContext(muxer).KeyEvents);
+                }
+                catch (Exception ex)
+                {
+                    string message = ex.Message;
+                    Console.WriteLine($"\n\n Redis server did not start: \n + {message} \n");
+                    throw;
+                }
 
-                    services.AddSingleton<GenerateThisInstanceGuidService>();
-                    services.AddSingleton<ISettingConstants, SettingConstants>();
-                    services.AddHostedService<QueuedHostedService>();
-                    services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
-                    services.AddSingleton<MonitorLoop>();
-                    services.AddSingleton<IBackgroundTasksService, BackgroundTasksService>();
-                    services.AddSingleton<IOnKeysEventsSubscribeService, OnKeysEventsSubscribeService>();
-                    services.AddSingleton<ITasksPackageCaptureService, TasksPackageCaptureService>();
-                    services.AddSingleton<ITasksBatchProcessingService, TasksBatchProcessingService>();
+                services.AddSingleton<GenerateThisInstanceGuidService>();
+                services.AddSingleton<ISharedDataAccess, SharedDataAccess>();
+                services.AddHostedService<QueuedHostedService>();
+                services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
+                services.AddSingleton<MonitorLoop>();
+                services.AddSingleton<IBackgroundTasksService, BackgroundTasksService>();
+                services.AddSingleton<IOnKeysEventsSubscribeService, OnKeysEventsSubscribeService>();
+                services.AddSingleton<ITasksPackageCaptureService, TasksPackageCaptureService>();
+                services.AddSingleton<ITasksBatchProcessingService, TasksBatchProcessingService>();
                 });
     }    
 
