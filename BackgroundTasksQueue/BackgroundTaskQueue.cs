@@ -35,7 +35,7 @@ namespace BackgroundTasksQueue
             }
 
             _logger.LogInformation("Task {Name} received in the Queue.", nameof(workItem));
-
+            // Adds an object to the end of the System.Collections.Concurrent.ConcurrentQueue`1
             _workItems.Enqueue(workItem);
             _signal.Release();
             _logger.LogInformation("QueueBackgroundWorkItem finished");
